@@ -6,7 +6,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/microo8/meh/dbgen"
+	"github.com/microo8/dbgen"
 )
 
 var (
