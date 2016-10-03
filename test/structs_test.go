@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"os"
 	"testing"
@@ -165,6 +166,77 @@ func TestIter(t *testing.T) {
 		}
 		if num != 1 {
 			t.Errorf("IterAge iterated %d times", num)
+		}
+	}
+}
+
+func BenchmarkJson(b *testing.B) {
+	os.RemoveAll(DBPATH)
+	db, err := OpenDB(DBPATH, json.Marshal, json.Unmarshal)
+	if err != nil {
+		b.Error(err)
+	}
+	defer db.Close()
+
+	p := &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
+		&address{Street: "Ble", Number: 222, City: "Tokio"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+	}}
+
+	for n := 0; n < b.N; n++ {
+		id, err := db.AddPerson(p)
+		if err != nil {
+			b.Error(err)
+		}
+		person, err := db.GetPerson(id)
+		if err != nil {
+			b.Error(err, person)
+		}
+	}
+}
+
+func GobEnc(v interface{}) ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(v)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func GobDec(data []byte, v interface{}) error {
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+	err := dec.Decode(v)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func BenchmarkGob(b *testing.B) {
+	os.RemoveAll(DBPATH)
+
+	db, err := OpenDB(DBPATH, GobEnc, GobDec)
+	if err != nil {
+		b.Error(err)
+	}
+	defer db.Close()
+
+	p := &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
+		&address{Street: "Ble", Number: 222, City: "Tokio"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+	}}
+
+	for n := 0; n < b.N; n++ {
+		id, err := db.AddPerson(p)
+		if err != nil {
+			b.Error(err)
+		}
+		person, err := db.GetPerson(id)
+		if err != nil {
+			b.Error(err, person)
 		}
 	}
 }
