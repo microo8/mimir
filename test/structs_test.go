@@ -13,7 +13,11 @@ const DBPATH = "/tmp/meh"
 
 func TestOpen(t *testing.T) {
 	os.RemoveAll(DBPATH)
-	db, err := OpenDB(DBPATH, json.Marshal, json.Unmarshal)
+	db, err := OpenDB("/", json.Marshal, json.Unmarshal)
+	if err == nil {
+		t.Error("DB opened in not existing path")
+	}
+	db, err = OpenDB(DBPATH, json.Marshal, json.Unmarshal)
 	if err != nil {
 		t.Error(err)
 	}
@@ -21,7 +25,7 @@ func TestOpen(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = db.AddPerson(&Person{Name: "a", Lastname: "b", Age: 34})
+	_, err = db.Persons().Add(&Person{Name: "a", Lastname: "b", Age: 34})
 	if err == nil {
 		t.Error(err)
 	}
@@ -35,19 +39,19 @@ func TestAddGet(t *testing.T) {
 	}
 	defer db.Close()
 
-	id, err := db.AddPerson(&Person{Name: "a", Lastname: "b", Age: 34})
+	id, err := db.Persons().Add(&Person{Name: "a", Lastname: "b", Age: 34})
 	if err != nil {
 		t.Error(err)
 	}
 	if id == 0 {
 		t.Error("id is zero")
 	}
-	p, err := db.GetPerson(id)
+	p, err := db.Persons().Get(id)
 	if err != nil {
-		t.Error(err)
 	}
 	if p.Name != "a" || p.Lastname != "b" || p.Age != 34 {
 		t.Error("getted person is not equal to the included")
+		t.Error(err)
 	}
 }
 
@@ -117,7 +121,7 @@ func TestIter(t *testing.T) {
 	}
 
 	for i, p := range persons {
-		id, err := db.AddPerson(p.p)
+		id, err := db.Persons().Add(p.p)
 		if err != nil {
 			t.Error(i, err)
 		}
@@ -127,7 +131,7 @@ func TestIter(t *testing.T) {
 		}
 	}
 
-	iter := db.IterPersonAll()
+	iter := db.Persons().All()
 	num := 0
 	for iter.Next() {
 		_, err := iter.Value()
@@ -144,7 +148,7 @@ func TestIter(t *testing.T) {
 	}
 
 	for i, p := range persons {
-		iterIndex := db.IterPersonAgeEq(p.p.Age)
+		iterIndex := db.Persons().IterAgeEq(p.p.Age)
 		num = 0
 		for iterIndex.Next() {
 			person, err := iterIndex.Value()
@@ -189,12 +193,13 @@ func BenchmarkJson(b *testing.B) {
 		&address{Street: "Bla", Number: 666, City: "Hell"},
 	}}
 
+	persons := db.Persons()
 	for n := 0; n < b.N; n++ {
-		id, err := db.AddPerson(p)
+		id, err := persons.Add(p)
 		if err != nil {
 			b.Error(err)
 		}
-		person, err := db.GetPerson(id)
+		person, err := persons.Get(id)
 		if err != nil {
 			b.Error(err, person)
 		}
@@ -260,12 +265,13 @@ func BenchmarkGob(b *testing.B) {
 		&address{Street: "Bla", Number: 666, City: "Hell"},
 	}}
 
+	persons := db.Persons()
 	for n := 0; n < b.N; n++ {
-		id, err := db.AddPerson(p)
+		id, err := persons.Add(p)
 		if err != nil {
 			b.Error(err)
 		}
-		person, err := db.GetPerson(id)
+		person, err := persons.Get(id)
 		if err != nil {
 			b.Error(err, person)
 		}
