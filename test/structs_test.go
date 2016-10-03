@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const DBPATH = "/tmp/meh"
+const DBPATH = "/home/micro/meh"
 
 func TestOpen(t *testing.T) {
 	os.RemoveAll(DBPATH)
@@ -195,14 +195,16 @@ func BenchmarkJson(b *testing.B) {
 
 	persons := db.Persons()
 	for n := 0; n < b.N; n++ {
-		id, err := persons.Add(p)
+		_, err := persons.Add(p)
 		if err != nil {
 			b.Error(err)
 		}
-		person, err := persons.Get(id)
-		if err != nil {
-			b.Error(err, person)
-		}
+		/*
+			person, err := persons.Get(id)
+			if err != nil {
+				b.Error(err, person)
+			}
+		*/
 	}
 }
 
@@ -267,13 +269,15 @@ func BenchmarkGob(b *testing.B) {
 
 	persons := db.Persons()
 	for n := 0; n < b.N; n++ {
-		id, err := persons.Add(p)
+		_, err := persons.Add(p)
 		if err != nil {
 			b.Error(err)
 		}
-		person, err := persons.Get(id)
-		if err != nil {
-			b.Error(err, person)
-		}
+		/*
+			person, err := persons.Get(id)
+			if err != nil {
+				b.Error(err, person)
+			}
+		*/
 	}
 }
