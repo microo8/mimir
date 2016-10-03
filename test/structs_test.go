@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -181,6 +182,11 @@ func BenchmarkJson(b *testing.B) {
 	p := &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
 		&address{Street: "Ble", Number: 222, City: "Tokio"},
 		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
 	}}
 
 	for n := 0; n < b.N; n++ {
@@ -195,20 +201,39 @@ func BenchmarkJson(b *testing.B) {
 	}
 }
 
-func GobEnc(v interface{}) ([]byte, error) {
+type GobCodec struct {
+	lock sync.Mutex
+	buf  *bytes.Buffer
+	enc  *gob.Encoder
+	dec  *gob.Decoder
+}
+
+func NewGobCodec() *GobCodec {
 	buf := bytes.NewBuffer(nil)
-	enc := gob.NewEncoder(buf)
-	err := enc.Encode(v)
+	return &GobCodec{
+		buf: buf,
+		enc: gob.NewEncoder(buf),
+		dec: gob.NewDecoder(buf),
+	}
+}
+
+func (c *GobCodec) Marshal(v interface{}) ([]byte, error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.buf.Reset()
+	err := c.enc.Encode(v)
 	if err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	return c.buf.Bytes(), nil
 }
 
-func GobDec(data []byte, v interface{}) error {
-	buf := bytes.NewBuffer(data)
-	dec := gob.NewDecoder(buf)
-	err := dec.Decode(v)
+func (c *GobCodec) Unmarshal(data []byte, v interface{}) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.buf.Reset()
+	c.buf.Write(data)
+	err := c.dec.Decode(v)
 	if err != nil {
 		return err
 	}
@@ -218,7 +243,8 @@ func GobDec(data []byte, v interface{}) error {
 func BenchmarkGob(b *testing.B) {
 	os.RemoveAll(DBPATH)
 
-	db, err := OpenDB(DBPATH, GobEnc, GobDec)
+	codec := NewGobCodec()
+	db, err := OpenDB(DBPATH, codec.Marshal, codec.Unmarshal)
 	if err != nil {
 		b.Error(err)
 	}
@@ -226,6 +252,11 @@ func BenchmarkGob(b *testing.B) {
 
 	p := &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
 		&address{Street: "Ble", Number: 222, City: "Tokio"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
+		&address{Street: "Bla", Number: 666, City: "Hell"},
 		&address{Street: "Bla", Number: 666, City: "Hell"},
 	}}
 
