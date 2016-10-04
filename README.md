@@ -5,7 +5,7 @@ Generates code for an embedded database from structs in golang with minimal API.
 
 When you trying to make a little tool that must store some objects somewhere, it is hard to make an easy to use store quickly.
 That's why `Mímir` was created! It takes structs from an go file and generates code to store, retrieve and iterate trough collections of objects defined by parsed structs.
-The store operates on top of [leveldb](https://github.com/syndtr/goleveldb). The name Mímir is from the Norse mythology, [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) a wisdom deity.
+The store operates on top of [leveldb](https://github.com/syndtr/goleveldb). The name is from the Norse mythology, [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) a wisdom deity.
 
 example structs (structs.go):
 
