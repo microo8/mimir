@@ -1,10 +1,10 @@
-[![Report card](http://goreportcard.com/badge/microo8/dbgen)](http://goreportcard.com/report/microo8/dbgen)
+[![Report card](http://goreportcard.com/badge/microo8/mimir)](http://goreportcard.com/report/microo8/mimir)
 
-# dbgen
+# Mímir
 Generates minimal embedded database from structs in golang
-
 When you trying to make a little tool that must store some objects somewhere, it is hard to make an easy to use store quickly.
-That's why `dbgen` was created! It takes structs from an go file and generates code to store, retrieve and iterate trough collections of objects defined by parsed structs. The store is operates on top of [leveldb]()
+That's why `Mímir` was created! It takes structs from an go file and generates code to store, retrieve and iterate trough collections of objects defined by parsed structs.
+The store is operates on top of [leveldb](https://github.com/syndtr/goleveldb). The name Mímir is from the Norse mythology, [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) a wisdom deity.
 
 example structs (structs.go):
 
@@ -26,7 +26,7 @@ type address struct {
 }
 ```  
 
-generate db code: `dbgen structs.go`
+generate db code: `mimir structs.go`
 
 Usage:
 
