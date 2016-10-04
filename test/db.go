@@ -166,19 +166,12 @@ func (db *DB) Close() error {
 	return db.db.Close()
 }
 
-//IterPerson iterates trough all Person in db
-type IterPerson struct {
-	db *DB
+type Iter struct {
 	it iterator.Iterator
 }
 
-//Next sets the iterator to the next Person, or returns false
-func (it *IterPerson) Next() bool {
-	return it.it.Next()
-}
-
-//ID returns Person id
-func (it *IterPerson) ID() int {
+//ID returns id of object
+func (it *Iter) ID() int {
 	key := it.it.Key()
 	index := bytes.LastIndexByte(key, '/')
 	if index == -1 {
@@ -191,11 +184,32 @@ func (it *IterPerson) ID() int {
 	return objID
 }
 
+//Next sets the iterator to the next object, or returns false
+func (it *Iter) Next() bool {
+	return it.it.Next()
+}
+
+//PersonCollection represents the collection of Persons
+type PersonCollection struct {
+	db *DB
+}
+
+//Persons returns the Persons collection
+func (db *DB) Persons() *PersonCollection {
+	return &PersonCollection{db: db}
+}
+
+//IterPerson iterates trough all Person in db
+type IterPerson struct {
+	*Iter
+	col *PersonCollection
+}
+
 //Value returns the Person on witch is the iterator
 func (it *IterPerson) Value() (*Person, error) {
 	data := it.it.Value()
 	var obj Person
-	err := it.db.decode(data, &obj)
+	err := it.col.db.decode(data, &obj)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +232,7 @@ func (it *IterIndexPerson) Value() (*Person, error) {
 	if err != nil {
 		return nil, err
 	}
-	obj, err := it.db.GetPerson(id)
+	obj, err := it.col.Get(id)
 	if err != nil {
 		return nil, err
 	}
@@ -232,70 +246,70 @@ func prefixPerson(id int) []byte {
 	return buf.Bytes()
 }
 
-//GetPerson returns the object with specified id or an error
-func (db *DB) GetPerson(id int) (*Person, error) {
-	data, err := db.db.Get(prefixPerson(id), nil)
+//Get returns Person with specified id or an error
+func (col *PersonCollection) Get(id int) (*Person, error) {
+	data, err := col.db.db.Get(prefixPerson(id), nil)
 	if err != nil {
 		return nil, err
 	}
 	var obj Person
-	err = db.decode(data, &obj)
+	err = col.db.decode(data, &obj)
 	if err != nil {
 		return nil, err
 	}
 	return &obj, nil
 }
 
-//AddPerson inserts new Person to the db
-func (db *DB) AddPerson(obj *Person) (int, error) {
-	data, err := db.encode(&obj)
+//Add inserts new Person to the db
+func (col *PersonCollection) Add(obj *Person) (int, error) {
+	data, err := col.db.encode(&obj)
 	if err != nil {
 		return 0, err
 	}
 	batch := new(leveldb.Batch)
 	id := rand.Int()
 	batch.Put(prefixPerson(id), data)
-	err = db.addPersonIndex([]byte("$Person"), batch, id, obj)
+	err = col.db.Persons().addIndex([]byte("$Person"), batch, id, obj)
 	if err != nil {
 		return 0, err
 	}
-	err = db.db.Write(batch, nil)
+	err = col.db.db.Write(batch, nil)
 	if err != nil {
 		return 0, err
 	}
 	return id, nil
 }
 
-//UpdatePerson updates Person with specified id
-func (db *DB) UpdatePerson(id int, obj *Person) error {
+//Update updates Person with specified id
+func (col *PersonCollection) Update(id int, obj *Person) error {
 	key := prefixPerson(id)
-	_, err := db.db.Get(key, nil)
+	_, err := col.db.db.Get(key, nil)
 	if err != nil {
 		return err
 	}
-	data, err := db.encode(&obj)
+	data, err := col.db.encode(&obj)
 	if err != nil {
 		return err
 	}
 	batch := new(leveldb.Batch)
 	batch.Put(key, data)
-	err = db.removePersonIndex(batch, id)
+	err = col.removeIndex(batch, id)
 	if err != nil {
 		return err
 	}
-	err = db.addPersonIndex([]byte("$Person"), batch, id, obj)
+	err = col.addIndex([]byte("Person"), batch, id, obj)
 	if err != nil {
 		return err
 	}
-	err = db.db.Write(batch, nil)
+	err = col.db.db.Write(batch, nil)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (db *DB) removePersonIndex(batch *leveldb.Batch, id int) error {
-	iter := db.db.NewIterator(util.BytesPrefix([]byte("$Person")), nil)
+func (col *PersonCollection) removeIndex(batch *leveldb.Batch, id int) error {
+	iter := col.db.db.NewIterator(util.BytesPrefix([]byte("$Person")), nil)
 	for iter.Next() {
 		key := iter.Key()
 		index := bytes.LastIndexByte(key, '/')
@@ -317,46 +331,75 @@ func (db *DB) removePersonIndex(batch *leveldb.Batch, id int) error {
 	return iter.Error()
 }
 
-//IterPersonAll returns an iterator witch iterates trough all Persons
-func (db *DB) IterPersonAll() *IterPerson {
+//All returns an iterator witch iterates trough all Persons
+func (col *PersonCollection) All() *IterPerson {
 	return &IterPerson{
-		it: db.db.NewIterator(util.BytesPrefix([]byte("Person")), nil),
-		db: db,
+		Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix([]byte("Person")), nil)},
+		col:  col,
 	}
 }
 
-//IterPersonAddressCityEq iterates trough Person AddressCity index with equal values
-func (db *DB) IterPersonAddressCityEq(val string) *IterIndexPerson {
+//IterAddressCityEq iterates trough Person AddressCity index with equal values
+func (col *PersonCollection) IterAddressCityEq(val string) *IterIndexPerson {
 	valDump := lexDumpString(val)
 	prefix := append([]byte("$Person/AddressCity/"), valDump...)
 	return &IterIndexPerson{
 		IterPerson{
-			it: db.db.NewIterator(util.BytesPrefix(prefix), nil),
-			db: db,
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
+			col:  col,
 		},
 	}
 }
 
-//IterPersonAgeEq iterates trough Person Age index with equal values
-func (db *DB) IterPersonAgeEq(val int) *IterIndexPerson {
+//IterAddressCityRange iterates trough Person AddressCity index in the specified range
+func (col *PersonCollection) IterAddressCityRange(start, limit string) *IterIndexPerson {
+	return &IterIndexPerson{
+		IterPerson{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
+				Start: append([]byte("$Person/AddressCity/"), lexDumpString(start)...),
+				Limit: append([]byte("$Person/AddressCity/"), lexDumpString(limit)...),
+			}, nil)},
+			col: col,
+		},
+	}
+}
+
+//IterAgeEq iterates trough Person Age index with equal values
+func (col *PersonCollection) IterAgeEq(val int) *IterIndexPerson {
 	valDump := lexDumpInt(val)
 	prefix := append([]byte("$Person/Age/"), valDump...)
 	return &IterIndexPerson{
 		IterPerson{
-			it: db.db.NewIterator(util.BytesPrefix(prefix), nil),
-			db: db,
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
+			col:  col,
 		},
 	}
 }
 
-func (db *DB) addPersonIndex(prefix []byte, batch *leveldb.Batch, id int, obj *Person) (err error) {
+//IterAgeRange iterates trough Person Age index in the specified range
+func (col *PersonCollection) IterAgeRange(start, limit int) *IterIndexPerson {
+	return &IterIndexPerson{
+		IterPerson{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
+				Start: append([]byte("$Person/Age/"), lexDumpInt(start)...),
+				Limit: append([]byte("$Person/Age/"), lexDumpInt(limit)...),
+			}, nil)},
+			col: col,
+		},
+	}
+}
+
+func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id int, obj *Person) (err error) {
+
 	if obj == nil {
 		return nil
 	}
 	var buf *bytes.Buffer
 
 	for _, attr := range obj.Addresses {
-		err = db.addaddressIndex(prefix, batch, id, attr)
+
+		err = col.db.addaddressIndex(prefix, batch, id, attr)
+
 		if err != nil {
 			return err
 		}
@@ -375,6 +418,7 @@ func (db *DB) addPersonIndex(prefix []byte, batch *leveldb.Batch, id int, obj *P
 }
 
 func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *address) (err error) {
+
 	if obj == nil {
 		return nil
 	}

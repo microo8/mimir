@@ -180,21 +180,12 @@ func (db *DB) Close() error {
 	return db.db.Close()
 }
 
-{{range $structName, $struct := .}}
-{{if $struct.Exported}}
-//Iter{{$structName}} iterates trough all {{$structName}} in db
-type Iter{{$structName}} struct {
-	db *DB
+type Iter struct {
 	it iterator.Iterator
 }
 
-//Next sets the iterator to the next {{$structName}}, or returns false
-func (it *Iter{{$structName}}) Next() bool {
-	return it.it.Next()
-}
-
-//ID returns {{$structName}} id
-func (it *Iter{{$structName}}) ID() int {
+//ID returns id of object
+func (it *Iter) ID() int {
 	key := it.it.Key()
 	index := bytes.LastIndexByte(key, '/')
 	if index == -1 {
@@ -207,11 +198,34 @@ func (it *Iter{{$structName}}) ID() int {
 	return objID
 }
 
+//Next sets the iterator to the next object, or returns false
+func (it *Iter) Next() bool {
+	return it.it.Next()
+}
+
+{{range $structName, $struct := .}}
+{{if $struct.Exported}}
+//{{$structName}}Collection represents the collection of {{$structName}}s
+type {{$structName}}Collection struct {
+	db *DB
+}
+
+//{{$structName}}s returns the {{$structName}}s collection
+func (db *DB) {{$structName}}s() *{{$structName}}Collection {
+	return &{{$structName}}Collection{db: db}
+}
+
+//Iter{{$structName}} iterates trough all {{$structName}} in db
+type Iter{{$structName}} struct {
+	*Iter
+	col *{{$structName}}Collection
+}
+
 //Value returns the {{$structName}} on witch is the iterator
 func (it *Iter{{$structName}}) Value() (*{{$structName}}, error) {
 	data := it.it.Value()
 	var obj {{$structName}}
-	err := it.db.decode(data, &obj)
+	err := it.col.db.decode(data, &obj)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +248,7 @@ func (it *IterIndex{{$structName}}) Value() (*{{$structName}}, error) {
 	if err != nil {
 		return nil, err
 	}
-	obj, err := it.db.Get{{$structName}}(id)
+	obj, err := it.col.Get(id)
 	if err != nil {
 		return nil, err
 	}
@@ -248,70 +262,70 @@ func prefix{{$structName}}(id int) []byte {
     return buf.Bytes()
 }
 
-//Get{{$structName}} returns the object with specified id or an error
-func (db *DB) Get{{$structName}}(id int) (*{{$structName}}, error) {
-	data, err := db.db.Get(prefix{{$structName}}(id), nil)
+//Get returns {{$structName}} with specified id or an error
+func (col *{{$structName}}Collection) Get(id int) (*{{$structName}}, error) {
+	data, err := col.db.db.Get(prefix{{$structName}}(id), nil)
 	if err != nil {
 		return nil, err
 	}
 	var obj {{$structName}}
-	err = db.decode(data, &obj)
+	err = col.db.decode(data, &obj)
 	if err != nil {
 		return nil, err
 	}
 	return &obj, nil
 }
 
-//Add{{$structName}} inserts new {{$structName}} to the db
-func (db *DB) Add{{$structName}}(obj *{{$structName}}) (int, error) {
-    data, err := db.encode(&obj)
+//Add inserts new {{$structName}} to the db
+func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
+    data, err := col.db.encode(&obj)
     if err != nil {
         return 0, err
     }
     batch := new(leveldb.Batch)
     id := rand.Int()
     batch.Put(prefix{{$structName}}(id), data)
-    err = db.add{{$structName}}Index([]byte("${{$structName}}"), batch, id, obj)
+    err = col.db.{{$structName}}s().addIndex([]byte("${{$structName}}"), batch, id, obj)
     if err != nil {
         return 0, err
     }
-    err = db.db.Write(batch, nil)
+    err = col.db.db.Write(batch, nil)
     if err != nil {
         return 0, err
     }
     return id, nil
 }
 
-//Update{{$structName}} updates {{$structName}} with specified id
-func (db *DB) Update{{$structName}}(id int, obj *{{$structName}}) error {
+//Update updates {{$structName}} with specified id
+func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error {
     key := prefix{{$structName}}(id)
-    _, err := db.db.Get(key, nil)
+    _, err := col.db.db.Get(key, nil)
     if err != nil {
         return err
     }
-    data, err := db.encode(&obj)
+    data, err := col.db.encode(&obj)
     if err != nil {
         return err
     }
     batch := new(leveldb.Batch)
     batch.Put(key, data)
-    err = db.remove{{$structName}}Index(batch, id)
+    err = col.removeIndex(batch, id)
     if err != nil {
         return err
     }
-    err = db.add{{$structName}}Index([]byte("${{$structName}}"), batch, id, obj)
+    err = col.addIndex([]byte("{{$structName}}"), batch, id, obj)
     if err != nil {
         return err
     }
-    err = db.db.Write(batch, nil)
+    err = col.db.db.Write(batch, nil)
     if err != nil {
         return err
     }
     return nil
 }
 
-func (db *DB) remove{{$structName}}Index(batch *leveldb.Batch, id int) error {
-    iter := db.db.NewIterator(util.BytesPrefix([]byte("${{$structName}}")), nil)
+func (col *{{$structName}}Collection) removeIndex(batch *leveldb.Batch, id int) error {
+    iter := col.db.db.NewIterator(util.BytesPrefix([]byte("${{$structName}}")), nil)
     for iter.Next() {
 		key := iter.Key()
 		index := bytes.LastIndexByte(key, '/')
@@ -333,23 +347,36 @@ func (db *DB) remove{{$structName}}Index(batch *leveldb.Batch, id int) error {
     return iter.Error()
 }
 
-//Iter{{$structName}}All returns an iterator witch iterates trough all {{$structName}}s
-func (db *DB) Iter{{$structName}}All() *Iter{{$structName}} {
+//All returns an iterator witch iterates trough all {{$structName}}s
+func (col *{{$structName}}Collection) All() *Iter{{$structName}} {
 	return &Iter{{$structName}}{
-		it: db.db.NewIterator(util.BytesPrefix([]byte("{{$structName}}")), nil),
-		db: db,
+		Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix([]byte("{{$structName}}")), nil)},
+		col: col,
 	}
 }
 
 {{range $indexName, $subType := (getIndex $structName)}}
-//Iter{{$structName}}{{$indexName}}Eq iterates trough {{$structName}} {{$indexName}} index with equal values
-func (db *DB) Iter{{$structName}}{{$indexName}}Eq(val {{$subType}}) *IterIndex{{$structName}} {
+//Iter{{$indexName}}Eq iterates trough {{$structName}} {{$indexName}} index with equal values
+func (col *{{$structName}}Collection) Iter{{$indexName}}Eq(val {{$subType}}) *IterIndex{{$structName}} {
 	valDump := lexDump{{title $subType}}(val)
 	prefix := append([]byte("${{$structName}}/{{$indexName}}/"), valDump...)
 	return &IterIndex{{$structName}}{
 		Iter{{$structName}}{
-			it: db.db.NewIterator(util.BytesPrefix(prefix), nil),
-			db: db,
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
+			col: col,
+		},
+	}
+}
+
+//Iter{{$indexName}}Range iterates trough {{$structName}} {{$indexName}} index in the specified range
+func (col *{{$structName}}Collection) Iter{{$indexName}}Range(start, limit {{$subType}}) *IterIndex{{$structName}} {
+	return &IterIndex{{$structName}}{
+		Iter{{$structName}}{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
+				Start: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{title $subType}}(start)...),
+				Limit: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{title $subType}}(limit)...),
+			}, nil)},
+			col: col,
 		},
 	}
 }
@@ -357,7 +384,11 @@ func (db *DB) Iter{{$structName}}{{$indexName}}Eq(val {{$subType}}) *IterIndex{{
 {{end}}
 
 {{if hasIndex $structName}}
+{{if $struct.Exported}}
+func (col *{{$structName}}Collection) addIndex(prefix []byte, batch *leveldb.Batch, id int, obj *{{$structName}}) (err error) {
+{{else}}
 func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id int, obj *{{$structName}}) (err error) {
+{{end}}
 	if obj == nil {
 		return nil
 	}
@@ -367,13 +398,17 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 		{{if hasIndex $attr.Type}}
 		{{if (contains $attr.Type "[]")}}
 			for _, attr := range obj.{{$attrName}} {
-				err = db.add{{replace (replace $attr.Type "[]" "") "*" ""}}Index(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				{{if isExported (replace (replace $attr.Type "[]" "") "*" "")}}
+				err = {{if $struct.Exported}}col.{{end}}db.{{replace (replace $attr.Type "[]" "") "*" ""}}s().addIndex(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				{{else}}
+				err = {{if $struct.Exported}}col.{{end}}db.add{{replace (replace $attr.Type "[]" "") "*" ""}}Index(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				{{end}}
 				if err != nil {
 					return err
 				}
 			}
     	{{else}}
-			err = db.add{{replace $attr.Type "*" ""}}Index(prefix, batch, id, obj.{{$attrName}})
+			err = db.{{replace $attr.Type "*" ""}}s().addIndex(prefix, batch, id, obj.{{$attrName}})
 			if err != nil {
 				return err
 			}
@@ -540,12 +575,13 @@ func (gen DBGenerator) isStruct(structName string) bool {
 //Generate generates the db sourcecode
 func (gen DBGenerator) Generate(w io.Writer) error {
 	funcMap := template.FuncMap{
-		"isStruct": gen.isStruct,
-		"replace":  func(o, old, new string) string { return strings.Replace(o, old, new, -1) },
-		"contains": strings.Contains,
-		"hasIndex": gen.hasIndex,
-		"getIndex": gen.getIndex,
-		"title":    strings.Title,
+		"isStruct":   gen.isStruct,
+		"replace":    func(o, old, new string) string { return strings.Replace(o, old, new, -1) },
+		"contains":   strings.Contains,
+		"hasIndex":   gen.hasIndex,
+		"getIndex":   gen.getIndex,
+		"title":      strings.Title,
+		"isExported": ast.IsExported,
 	}
 	buf := bytes.NewBuffer(nil)
 	temp, err := template.New("").Funcs(funcMap).Parse(DBTEMPLATE)
