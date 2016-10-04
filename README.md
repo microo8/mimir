@@ -3,7 +3,7 @@
 # Mímir
 <img src="https://raw.githubusercontent.com/microo8/mimir/master/logo.png" alt="Mímir logo" align="right"/>
 
-Generates code for an embedded database from structs in golang with minimal API.
+Generates code for an embedded database with minimal API from structs in golang.
 
 When you trying to make a little tool that has to save some objects somewhere, it's hard to make an easy to use store quickly. And in existing embedded databases you must handle objects as `map[string]interface{}`.
 
