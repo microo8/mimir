@@ -1,4 +1,4 @@
-//file genereated with github.com/microo8/dbgen DO NOT MODIFY!
+//file genereated with github.com/microo8/mimir DO NOT MODIFY!
 package main
 
 import (

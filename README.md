@@ -7,6 +7,8 @@ When you trying to make a little tool that must store some objects somewhere, it
 That's why `Mímir` was created! It takes structs from an go file and generates code to store, retrieve and iterate trough collections of objects defined by parsed structs.
 The store operates on top of [leveldb](https://github.com/syndtr/goleveldb). The name is from the Norse mythology, [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) a wisdom deity.
 
+* Mímir isn't stable, need more testing
+
 example structs (structs.go):
 
 ```go
