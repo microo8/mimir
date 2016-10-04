@@ -460,14 +460,12 @@ type DBGenerator struct {
 
 //Parse parses the given file and returns the DBGenerator
 func Parse(filename string) (*DBGenerator, error) {
-	gen := new(DBGenerator)
-	gen.Structs = make(map[string]*Struct)
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("Error in parsing file %s: %s", filename, err)
 	}
-	gen.PackageName = f.Name.Name
+	gen := &DBGenerator{Structs: make(map[string]*Struct), PackageName: f.Name.Name}
 	ast.Inspect(f, func(node ast.Node) bool {
 		typ, ok := node.(*ast.GenDecl)
 		if !ok || typ.Tok != token.TYPE {
