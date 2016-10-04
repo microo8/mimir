@@ -166,6 +166,7 @@ func (db *DB) Close() error {
 	return db.db.Close()
 }
 
+//Iter implemenst basic iterator functions
 type Iter struct {
 	it iterator.Iterator
 }

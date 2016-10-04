@@ -8,6 +8,7 @@ That's why `Mímir` was created! It takes structs from an go file and generates 
 The store operates on top of [leveldb](https://github.com/syndtr/goleveldb). The name is from the Norse mythology, [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) a wisdom deity.
 
 * Mímir isn't stable, need more testing
+* Contribution of all kind welcome!
 
 example structs (structs.go):
 
