@@ -180,33 +180,12 @@ func (db *DB) Close() error {
 	return db.db.Close()
 }
 
-{{range $structName, $struct := .}}
-{{if $struct.Exported}}
-//{{$structName}}Collection represents the collection of {{$structName}}s
-type {{$structName}}Collection struct{
-	db *DB
-}
-
-//{{$structName}}s returns the {{$structName}}s collection
-func (db *DB) {{$structName}}s() *{{$structName}}Collection {
-	return &{{$structName}}Collection{db: db}
-}
-
-//Iter{{$structName}} iterates trough all {{$structName}} in db
-type Iter{{$structName}} struct {
-	col *{{$structName}}Collection
+type Iter struct {
 	it iterator.Iterator
 }
 
-//TODO this repeats for all collections ...
-
-//Next sets the iterator to the next {{$structName}}, or returns false
-func (it *Iter{{$structName}}) Next() bool {
-	return it.it.Next()
-}
-
-//ID returns {{$structName}} id
-func (it *Iter{{$structName}}) ID() int {
+//ID returns id of object
+func (it *Iter) ID() int {
 	key := it.it.Key()
 	index := bytes.LastIndexByte(key, '/')
 	if index == -1 {
@@ -217,6 +196,29 @@ func (it *Iter{{$structName}}) ID() int {
 		return 0
 	}
 	return objID
+}
+
+//Next sets the iterator to the next object, or returns false
+func (it *Iter) Next() bool {
+	return it.it.Next()
+}
+
+{{range $structName, $struct := .}}
+{{if $struct.Exported}}
+//{{$structName}}Collection represents the collection of {{$structName}}s
+type {{$structName}}Collection struct {
+	db *DB
+}
+
+//{{$structName}}s returns the {{$structName}}s collection
+func (db *DB) {{$structName}}s() *{{$structName}}Collection {
+	return &{{$structName}}Collection{db: db}
+}
+
+//Iter{{$structName}} iterates trough all {{$structName}} in db
+type Iter{{$structName}} struct {
+	*Iter
+	col *{{$structName}}Collection
 }
 
 //Value returns the {{$structName}} on witch is the iterator
@@ -348,7 +350,7 @@ func (col *{{$structName}}Collection) removeIndex(batch *leveldb.Batch, id int) 
 //All returns an iterator witch iterates trough all {{$structName}}s
 func (col *{{$structName}}Collection) All() *Iter{{$structName}} {
 	return &Iter{{$structName}}{
-		it: col.db.db.NewIterator(util.BytesPrefix([]byte("{{$structName}}")), nil),
+		Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix([]byte("{{$structName}}")), nil)},
 		col: col,
 	}
 }
@@ -360,7 +362,7 @@ func (col *{{$structName}}Collection) Iter{{$indexName}}Eq(val {{$subType}}) *It
 	prefix := append([]byte("${{$structName}}/{{$indexName}}/"), valDump...)
 	return &IterIndex{{$structName}}{
 		Iter{{$structName}}{
-			it: col.db.db.NewIterator(util.BytesPrefix(prefix), nil),
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
 			col: col,
 		},
 	}
@@ -370,10 +372,10 @@ func (col *{{$structName}}Collection) Iter{{$indexName}}Eq(val {{$subType}}) *It
 func (col *{{$structName}}Collection) Iter{{$indexName}}Range(start, limit {{$subType}}) *IterIndex{{$structName}} {
 	return &IterIndex{{$structName}}{
 		Iter{{$structName}}{
-			it: col.db.db.NewIterator(&util.Range{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
 				Start: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{title $subType}}(start)...),
 				Limit: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{title $subType}}(limit)...),
-			}, nil),
+			}, nil)},
 			col: col,
 		},
 	}

@@ -80,9 +80,10 @@ func TestLexDumpString(t *testing.T) {
 		{"z", "y"},
 		{"bla", "ameh"},
 		{"xxxxxxxxxx", "aaaaaaaa"},
+		{"Zagreb", "ZZZZZ"},
 	}
 	for i, d := range data {
-		if bytes.Compare(lexDumpString(d.a), lexDumpString(d.b)) != 1 {
+		if bytes.Compare(lexDumpString(d.a), lexDumpString(d.b)) == -1 {
 			t.Errorf("in %d (%v) a >= b", i, d)
 		}
 	}
@@ -104,18 +105,18 @@ func TestIter(t *testing.T) {
 	persons := []*IterPersonID{
 		&IterPersonID{
 			p: &Person{Name: "asd", Lastname: "asdas", Age: 12, Addresses: []*address{
-				&address{Street: "tserew", Number: 123, City: "NY"},
+				&address{Street: "tserew", Number: 123, City: "Amsterdam"},
 			}},
 		},
 		&IterPersonID{
 			p: &Person{Name: "foo", Lastname: "bar", Age: 123, Addresses: []*address{
-				&address{Street: "apsdosadpsaojd", Number: 1232, City: "London"},
+				&address{Street: "apsdosadpsaojd", Number: 1232, City: "Berlin"},
 			}},
 		},
 		&IterPersonID{
 			p: &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
-				&address{Street: "Ble", Number: 222, City: "Tokio"},
-				&address{Street: "Bla", Number: 666, City: "Hell"},
+				&address{Street: "Ble", Number: 222, City: "London"},
+				&address{Street: "Bla", Number: 666, City: "Zagreb"},
 			}},
 		},
 	}
@@ -173,7 +174,41 @@ func TestIter(t *testing.T) {
 			t.Errorf("IterAge iterated %d times", num)
 		}
 	}
+
+	iterIndex := db.Persons().IterAddressCityRange("0", "ZZZZZZZZZZ")
+	i := 0
+	for iterIndex.Next() {
+		p, err := iterIndex.Value()
+		if err != nil {
+			t.Error(err)
+		}
+		t.Log(i, p)
+		if p.Name != persons[i].p.Name {
+			t.Errorf("Person name not equal in %d CityRange", i)
+		}
+		if iterIndex.ID() != persons[i].id {
+			t.Errorf("Person id not equal in %d CityRange", i)
+		}
+		t.Log(i, p, persons[i])
+		i++
+	}
+	if i == 0 {
+		t.Error("No iteration in IterAddressCityRange")
+	}
+	if i != 4 {
+		t.Error("IterAddressCityRange not iterated trough all indices")
+	}
 }
+
+var personObj = &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
+	&address{Street: "Ble", Number: 222, City: "Tokio"},
+	&address{Street: "Bla", Number: 666, City: "Hell"},
+	&address{Street: "Bla", Number: 666, City: "Hell"},
+	&address{Street: "Bla", Number: 666, City: "Hell"},
+	&address{Street: "Bla", Number: 666, City: "Hell"},
+	&address{Street: "Bla", Number: 666, City: "Hell"},
+	&address{Street: "Bla", Number: 666, City: "Hell"},
+}}
 
 func BenchmarkJson(b *testing.B) {
 	os.RemoveAll(DBPATH)
@@ -183,28 +218,16 @@ func BenchmarkJson(b *testing.B) {
 	}
 	defer db.Close()
 
-	p := &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
-		&address{Street: "Ble", Number: 222, City: "Tokio"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-	}}
-
 	persons := db.Persons()
 	for n := 0; n < b.N; n++ {
-		_, err := persons.Add(p)
+		id, err := persons.Add(personObj)
 		if err != nil {
 			b.Error(err)
 		}
-		/*
-			person, err := persons.Get(id)
-			if err != nil {
-				b.Error(err, person)
-			}
-		*/
+		person, err := persons.Get(id)
+		if err != nil {
+			b.Error(err, person)
+		}
 	}
 }
 
@@ -257,27 +280,15 @@ func BenchmarkGob(b *testing.B) {
 	}
 	defer db.Close()
 
-	p := &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
-		&address{Street: "Ble", Number: 222, City: "Tokio"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-		&address{Street: "Bla", Number: 666, City: "Hell"},
-	}}
-
 	persons := db.Persons()
 	for n := 0; n < b.N; n++ {
-		_, err := persons.Add(p)
+		id, err := persons.Add(personObj)
 		if err != nil {
 			b.Error(err)
 		}
-		/*
-			person, err := persons.Get(id)
-			if err != nil {
-				b.Error(err, person)
-			}
-		*/
+		person, err := persons.Get(id)
+		if err != nil {
+			b.Error(err, person)
+		}
 	}
 }

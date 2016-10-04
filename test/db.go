@@ -166,6 +166,29 @@ func (db *DB) Close() error {
 	return db.db.Close()
 }
 
+type Iter struct {
+	it iterator.Iterator
+}
+
+//ID returns id of object
+func (it *Iter) ID() int {
+	key := it.it.Key()
+	index := bytes.LastIndexByte(key, '/')
+	if index == -1 {
+		return 0
+	}
+	objID, err := lexLoadInt(key[index+1:])
+	if err != nil {
+		return 0
+	}
+	return objID
+}
+
+//Next sets the iterator to the next object, or returns false
+func (it *Iter) Next() bool {
+	return it.it.Next()
+}
+
 //PersonCollection represents the collection of Persons
 type PersonCollection struct {
 	db *DB
@@ -178,29 +201,8 @@ func (db *DB) Persons() *PersonCollection {
 
 //IterPerson iterates trough all Person in db
 type IterPerson struct {
+	*Iter
 	col *PersonCollection
-	it  iterator.Iterator
-}
-
-//TODO this repeats for all collections ...
-
-//Next sets the iterator to the next Person, or returns false
-func (it *IterPerson) Next() bool {
-	return it.it.Next()
-}
-
-//ID returns Person id
-func (it *IterPerson) ID() int {
-	key := it.it.Key()
-	index := bytes.LastIndexByte(key, '/')
-	if index == -1 {
-		return 0
-	}
-	objID, err := lexLoadInt(key[index+1:])
-	if err != nil {
-		return 0
-	}
-	return objID
 }
 
 //Value returns the Person on witch is the iterator
@@ -332,8 +334,8 @@ func (col *PersonCollection) removeIndex(batch *leveldb.Batch, id int) error {
 //All returns an iterator witch iterates trough all Persons
 func (col *PersonCollection) All() *IterPerson {
 	return &IterPerson{
-		it:  col.db.db.NewIterator(util.BytesPrefix([]byte("Person")), nil),
-		col: col,
+		Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix([]byte("Person")), nil)},
+		col:  col,
 	}
 }
 
@@ -343,8 +345,8 @@ func (col *PersonCollection) IterAddressCityEq(val string) *IterIndexPerson {
 	prefix := append([]byte("$Person/AddressCity/"), valDump...)
 	return &IterIndexPerson{
 		IterPerson{
-			it:  col.db.db.NewIterator(util.BytesPrefix(prefix), nil),
-			col: col,
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
+			col:  col,
 		},
 	}
 }
@@ -353,10 +355,10 @@ func (col *PersonCollection) IterAddressCityEq(val string) *IterIndexPerson {
 func (col *PersonCollection) IterAddressCityRange(start, limit string) *IterIndexPerson {
 	return &IterIndexPerson{
 		IterPerson{
-			it: col.db.db.NewIterator(&util.Range{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
 				Start: append([]byte("$Person/AddressCity/"), lexDumpString(start)...),
 				Limit: append([]byte("$Person/AddressCity/"), lexDumpString(limit)...),
-			}, nil),
+			}, nil)},
 			col: col,
 		},
 	}
@@ -368,8 +370,8 @@ func (col *PersonCollection) IterAgeEq(val int) *IterIndexPerson {
 	prefix := append([]byte("$Person/Age/"), valDump...)
 	return &IterIndexPerson{
 		IterPerson{
-			it:  col.db.db.NewIterator(util.BytesPrefix(prefix), nil),
-			col: col,
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
+			col:  col,
 		},
 	}
 }
@@ -378,10 +380,10 @@ func (col *PersonCollection) IterAgeEq(val int) *IterIndexPerson {
 func (col *PersonCollection) IterAgeRange(start, limit int) *IterIndexPerson {
 	return &IterIndexPerson{
 		IterPerson{
-			it: col.db.db.NewIterator(&util.Range{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
 				Start: append([]byte("$Person/Age/"), lexDumpInt(start)...),
 				Limit: append([]byte("$Person/Age/"), lexDumpInt(limit)...),
-			}, nil),
+			}, nil)},
 			col: col,
 		},
 	}
