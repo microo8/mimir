@@ -1,6 +1,8 @@
 [![Report card](http://goreportcard.com/badge/microo8/mimir)](http://goreportcard.com/report/microo8/mimir)
 
 # Mímir
+<img src="https://raw.githubusercontent.com/microo8/mimir/master/logo.png" alt="Mímir logo" align="right"/>
+
 Generates code for an embedded database from structs in golang with minimal API.
 
 When you trying to make a little tool that must store some objects somewhere, it is hard to make an easy to use store quickly.
