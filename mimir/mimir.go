@@ -6,7 +6,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/microo8/dbgen"
+	"github.com/microo8/mimir"
 )
 
 var (
@@ -22,7 +22,7 @@ func main() {
 	if *output == "db.go" {
 		*output = path.Join(path.Dir(flag.Arg(0)), "db.go")
 	}
-	gen, err := dbgen.Parse(flag.Arg(0))
+	gen, err := mimir.Parse(flag.Arg(0))
 	if err != nil {
 		fmt.Printf("Parse error: %s", err)
 		return

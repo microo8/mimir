@@ -1,4 +1,4 @@
-package dbgen
+package mimir
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 )
 
 //DBTEMPLATE the main mart of the db source
-const DBTEMPLATE = `//file genereated with github.com/microo8/dbgen DO NOT MODIFY!
+const DBTEMPLATE = `//file genereated with github.com/microo8/mimir DO NOT MODIFY!
 package main
 {{$gen := .}}
 import (
