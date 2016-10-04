@@ -19,8 +19,8 @@ import (
 
 //DBTEMPLATE the main mart of the db source
 const DBTEMPLATE = `//file genereated with github.com/microo8/mimir DO NOT MODIFY!
-package main
-{{$gen := .}}
+package {{.PackageName}}
+{{$gen := .Structs}}
 import (
     "bytes"
 	"fmt"
@@ -209,7 +209,7 @@ func (it *Iter) Next() bool {
 	return it.it.Next()
 }
 
-{{range $structName, $struct := .}}
+{{range $structName, $struct := $gen}}
 {{if $struct.Exported}}
 //{{$structName}}Collection represents the collection of {{$structName}}s
 type {{$structName}}Collection struct {
@@ -452,14 +452,22 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 {{end}}
 `
 
+//DBGenerator represents the structs in file
+type DBGenerator struct {
+	PackageName string
+	Structs     map[string]*Struct
+}
+
 //Parse parses the given file and returns the DBGenerator
-func Parse(filename string) (DBGenerator, error) {
-	gen := make(DBGenerator)
+func Parse(filename string) (*DBGenerator, error) {
+	gen := new(DBGenerator)
+	gen.Structs = make(map[string]*Struct)
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("Error in parsing file %s: %s", filename, err)
 	}
+	gen.PackageName = f.Name.Name
 	ast.Inspect(f, func(node ast.Node) bool {
 		typ, ok := node.(*ast.GenDecl)
 		if !ok || typ.Tok != token.TYPE {
@@ -481,13 +489,13 @@ func Parse(filename string) (DBGenerator, error) {
 	return gen, nil
 }
 
-func parseStructType(gen DBGenerator, structSpec *ast.TypeSpec, structType *ast.StructType) {
+func parseStructType(gen *DBGenerator, structSpec *ast.TypeSpec, structType *ast.StructType) {
 	s := &Struct{
 		Name:     structSpec.Name.Name,
 		Exported: ast.IsExported(structSpec.Name.Name),
 		Attrs:    make(map[string]*Attr),
 	}
-	gen[structSpec.Name.Name] = s
+	gen.Structs[structSpec.Name.Name] = s
 	for _, field := range structType.Fields.List {
 		for _, name := range field.Names {
 			attr := new(Attr)
@@ -518,13 +526,10 @@ func parseStructType(gen DBGenerator, structSpec *ast.TypeSpec, structType *ast.
 	}
 }
 
-//DBGenerator represents the structs in file
-type DBGenerator map[string]*Struct
-
-func (gen DBGenerator) String() string {
+func (gen *DBGenerator) String() string {
 	var buf bytes.Buffer
 	buf.WriteString("DBGenerator {\n")
-	for structName, s := range gen {
+	for structName, s := range gen.Structs {
 		buf.WriteString(fmt.Sprintf("\t%s: {\n\t\tExported: %t\n", structName, s.Exported))
 		for attrName, attr := range s.Attrs {
 			buf.WriteString(fmt.Sprintf("\t\t%s %s", attrName, attr.Type))
@@ -539,8 +544,8 @@ func (gen DBGenerator) String() string {
 	return buf.String()
 }
 
-func (gen DBGenerator) hasIndex(structName string) bool {
-	s, ok := gen[strings.Replace(strings.Replace(structName, "[]", "", -1), "*", "", -1)]
+func (gen *DBGenerator) hasIndex(structName string) bool {
+	s, ok := gen.Structs[strings.Replace(strings.Replace(structName, "[]", "", -1), "*", "", -1)]
 	if !ok {
 		return false
 	}
@@ -555,8 +560,8 @@ func (gen DBGenerator) hasIndex(structName string) bool {
 	return false
 }
 
-func (gen DBGenerator) getIndex(structName string) map[string]string {
-	s, ok := gen[strings.Replace(strings.Replace(structName, "[]", "", -1), "*", "", -1)]
+func (gen *DBGenerator) getIndex(structName string) map[string]string {
+	s, ok := gen.Structs[strings.Replace(strings.Replace(structName, "[]", "", -1), "*", "", -1)]
 	if !ok {
 		return nil
 	}
@@ -573,8 +578,8 @@ func (gen DBGenerator) getIndex(structName string) map[string]string {
 	return ret
 }
 
-func (gen DBGenerator) isStruct(structName string) bool {
-	_, ok := gen[strings.Replace(strings.Replace(structName, "[]", "", -1), "*", "", -1)]
+func (gen *DBGenerator) isStruct(structName string) bool {
+	_, ok := gen.Structs[strings.Replace(strings.Replace(structName, "[]", "", -1), "*", "", -1)]
 	return ok
 }
 
