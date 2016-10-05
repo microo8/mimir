@@ -145,7 +145,7 @@ func TestIter(t *testing.T) {
 		&IterPersonID{
 			p: &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
 				&address{Street: "Ble", Number: 222, City: "London"},
-				&address{Street: "Bla", Number: 666, City: "Zagreb"},
+				&address{Street: "Bla", Number: 666, City: "Tokio"},
 			}},
 		},
 	}
@@ -162,6 +162,7 @@ func TestIter(t *testing.T) {
 	}
 
 	iter := db.Persons().All()
+	defer iter.Release()
 	num := 0
 	for iter.Next() {
 		_, err := iter.Value()
@@ -202,23 +203,24 @@ func TestIter(t *testing.T) {
 		if num != 1 {
 			t.Errorf("IterAge iterated %d times", num)
 		}
+		iterIndex.Release()
 	}
 
 	iterIndex := db.Persons().IterAddressCityRange("0", "ZZZZZZZZZZ")
+	defer iterIndex.Release()
 	i := 0
+	indices := []int{0, 1, 2, 2}
 	for iterIndex.Next() {
 		p, err := iterIndex.Value()
 		if err != nil {
 			t.Error(err)
 		}
-		t.Log(i, p)
-		if p.Name != persons[i].p.Name {
+		if p.Name != persons[indices[i]].p.Name {
 			t.Errorf("Person name not equal in %d CityRange", i)
 		}
-		if iterIndex.ID() != persons[i].id {
+		if iterIndex.ID() != persons[indices[i]].id {
 			t.Errorf("Person id not equal in %d CityRange", i)
 		}
-		t.Log(i, p, persons[i])
 		i++
 	}
 	if i == 0 {
