@@ -427,8 +427,7 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 	if obj == nil {
 		return nil
 	}
-	//TODO doesn't have to call NewBuffer all the time
-	var buf *bytes.Buffer
+	buf := bytes.NewBuffer(nil)
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
 		{{if hasIndex $attr.Type}}
@@ -454,7 +453,8 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 	    {{if ne $attr.Index ""}}
 			{{if (contains $attr.Type "[]")}}
 				for _, attr := range obj.{{$attrName}} {
-					buf = bytes.NewBuffer(prefix)
+					buf.Reset()
+					buf.Write(prefix)
 					buf.WriteRune('/')
 					buf.WriteString("{{$attr.Index}}")
 					buf.WriteRune('/')
@@ -464,7 +464,8 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 					batch.Put(buf.Bytes(), nil)
 				}
 			{{else}}
-				buf = bytes.NewBuffer(prefix)
+				buf.Reset()
+				buf.Write(prefix)
 				buf.WriteRune('/')
 				buf.WriteString("{{$attr.Index}}")
 				buf.WriteRune('/')
@@ -639,7 +640,7 @@ func (gen DBGenerator) Generate(w io.Writer) error {
 	return nil
 }
 
-//Struct TODO
+//Struct is the struct from whitch the collections are generated
 type Struct struct {
 	Name     string
 	Exported bool

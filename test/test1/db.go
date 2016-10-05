@@ -424,7 +424,7 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 		return nil
 	}
 	//TODO doesn't have to call NewBuffer all the time
-	var buf *bytes.Buffer
+	buf := bytes.NewBuffer(nil)
 
 	for _, attr := range obj.Addresses {
 
@@ -435,7 +435,8 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 		}
 	}
 
-	buf = bytes.NewBuffer(prefix)
+	buf.Reset()
+	buf.Write(prefix)
 	buf.WriteRune('/')
 	buf.WriteString("Age")
 	buf.WriteRune('/')
@@ -453,9 +454,10 @@ func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *
 		return nil
 	}
 	//TODO doesn't have to call NewBuffer all the time
-	var buf *bytes.Buffer
+	buf := bytes.NewBuffer(nil)
 
-	buf = bytes.NewBuffer(prefix)
+	buf.Reset()
+	buf.Write(prefix)
 	buf.WriteRune('/')
 	buf.WriteString("AddressCity")
 	buf.WriteRune('/')
