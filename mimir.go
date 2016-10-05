@@ -167,17 +167,25 @@ type Decode func([]byte, interface{}) error
 //DB handler to the db
 type DB struct {
     db     *leveldb.DB
+    //TODO check if changes in objs don't change decoding in json/gob than add just one encoding
 	encode Encode
 	decode Decode
+    {{range $structName, $struct := $gen}}{{if $struct.Exported}}
+    {{$structName}}s *{{$structName}}Collection
+	{{end}}{{end}}
 }
 
 //OpenDB opens the database
 func OpenDB(path string, encode Encode, decode Decode) (*DB, error) {
-    db, err := leveldb.OpenFile(path, nil)
+    ldb, err := leveldb.OpenFile(path, nil)
     if err != nil {
         return nil, err
     }
-    return &DB{db: db, encode: encode, decode: decode}, nil
+    db := &DB{db: ldb, encode: encode, decode: decode}
+    {{range $structName, $struct := $gen}}{{if $struct.Exported}}
+	db.{{$structName}}s = &{{$structName}}Collection{db: db}
+	{{end}}{{end}}
+	return db, nil
 }
 
 //Close closes the database
@@ -214,17 +222,11 @@ func (it *Iter) Release() {
 	it.it.Release()
 }
 
-//TODO collections can be attributes of db
 {{range $structName, $struct := $gen}}
 {{if $struct.Exported}}
 //{{$structName}}Collection represents the collection of {{$structName}}s
 type {{$structName}}Collection struct {
 	db *DB
-}
-
-//{{$structName}}s returns the {{$structName}}s collection
-func (db *DB) {{$structName}}s() *{{$structName}}Collection {
-	return &{{$structName}}Collection{db: db}
 }
 
 //Iter{{$structName}} iterates trough all {{$structName}} in db
@@ -389,8 +391,8 @@ func (col *{{$structName}}Collection) All() *Iter{{$structName}} {
 }
 
 {{range $indexName, $subType := (getIndex $structName)}}
-//Iter{{$indexName}}Eq iterates trough {{$structName}} {{$indexName}} index with equal values
-func (col *{{$structName}}Collection) Iter{{$indexName}}Eq(val {{$subType}}) *IterIndex{{$structName}} {
+//{{$indexName}}Eq iterates trough {{$structName}} {{$indexName}} index with equal values
+func (col *{{$structName}}Collection) {{$indexName}}Eq(val {{$subType}}) *IterIndex{{$structName}} {
 	valDump := lexDump{{title $subType}}(val)
 	prefix := append([]byte("${{$structName}}/{{$indexName}}/"), valDump...)
 	return &IterIndex{{$structName}}{
@@ -401,8 +403,8 @@ func (col *{{$structName}}Collection) Iter{{$indexName}}Eq(val {{$subType}}) *It
 	}
 }
 
-//Iter{{$indexName}}Range iterates trough {{$structName}} {{$indexName}} index in the specified range
-func (col *{{$structName}}Collection) Iter{{$indexName}}Range(start, limit {{$subType}}) *IterIndex{{$structName}} {
+//{{$indexName}}Range iterates trough {{$structName}} {{$indexName}} index in the specified range
+func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit {{$subType}}) *IterIndex{{$structName}} {
 	return &IterIndex{{$structName}}{
 		Iter{{$structName}}{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{

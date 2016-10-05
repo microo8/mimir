@@ -41,8 +41,15 @@ generate db code: `mimir structs.go`
 Usage:
 
 ```go
+//Open db file, codecs must be defined by you
+db, err := OpenDB("/tmp/mimirdb", json.Marshal, json.Unmarshal)
+if err != nil {
+	t.Error(err)
+}
+defer db.Close()
+
 //Get the Persons Collection
-persons := db.Persons()
+persons := db.Persons
 
 //Add an person to db
 id, err := persons.Add(&Person{
@@ -75,7 +82,7 @@ if err != nil {
 
 //Iterate trough the all persons in the Persons Collection
 iter := persons.All()
-defer iter.Release()
+defer iter.Release() //iter must be released
 for iter.Next() {
 	p := iter.Value()
 	fmt.Println(p.Name, p.Lastname, p.Age)
@@ -88,7 +95,7 @@ All substructs with specified indexes build also an index for the collection abo
 
 ```go
 //Iterating trough persons with Age in range 30-40
-iter := persons.IterAgeRange(30, 40)
+iter := db.Persons.AgeRange(30, 40)
 defer iter.Release()
 for iter.Next() {
 	p := iter.Value()
@@ -98,7 +105,7 @@ for iter.Next() {
 
 ```go
 //Iterating trough persons whitch have city in address equal to "London"
-iter := persons.IterAddressCityEq("London")
+iter := db.Persons.AddressCityEq("London")
 defer iter.Release()
 for iter.Next() {
 	p := iter.Value()

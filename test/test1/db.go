@@ -1,5 +1,4 @@
 //Package main genereated with github.com/microo8/mimir DO NOT MODIFY!
-
 package main
 
 import (
@@ -148,18 +147,25 @@ type Decode func([]byte, interface{}) error
 
 //DB handler to the db
 type DB struct {
-	db     *leveldb.DB
+	db *leveldb.DB
+	//TODO check if changes in objs don't change decoding in json/gob than add just one encoding
 	encode Encode
 	decode Decode
+
+	Persons *PersonCollection
 }
 
 //OpenDB opens the database
 func OpenDB(path string, encode Encode, decode Decode) (*DB, error) {
-	db, err := leveldb.OpenFile(path, nil)
+	ldb, err := leveldb.OpenFile(path, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &DB{db: db, encode: encode, decode: decode}, nil
+	db := &DB{db: ldb, encode: encode, decode: decode}
+
+	db.Persons = &PersonCollection{db: db}
+
+	return db, nil
 }
 
 //Close closes the database
@@ -199,11 +205,6 @@ func (it *Iter) Release() {
 //PersonCollection represents the collection of Persons
 type PersonCollection struct {
 	db *DB
-}
-
-//Persons returns the Persons collection
-func (db *DB) Persons() *PersonCollection {
-	return &PersonCollection{db: db}
 }
 
 //IterPerson iterates trough all Person in db
@@ -367,8 +368,8 @@ func (col *PersonCollection) All() *IterPerson {
 	}
 }
 
-//IterAddressCityEq iterates trough Person AddressCity index with equal values
-func (col *PersonCollection) IterAddressCityEq(val string) *IterIndexPerson {
+//AddressCityEq iterates trough Person AddressCity index with equal values
+func (col *PersonCollection) AddressCityEq(val string) *IterIndexPerson {
 	valDump := lexDumpString(val)
 	prefix := append([]byte("$Person/AddressCity/"), valDump...)
 	return &IterIndexPerson{
@@ -379,8 +380,8 @@ func (col *PersonCollection) IterAddressCityEq(val string) *IterIndexPerson {
 	}
 }
 
-//IterAddressCityRange iterates trough Person AddressCity index in the specified range
-func (col *PersonCollection) IterAddressCityRange(start, limit string) *IterIndexPerson {
+//AddressCityRange iterates trough Person AddressCity index in the specified range
+func (col *PersonCollection) AddressCityRange(start, limit string) *IterIndexPerson {
 	return &IterIndexPerson{
 		IterPerson{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
@@ -392,8 +393,8 @@ func (col *PersonCollection) IterAddressCityRange(start, limit string) *IterInde
 	}
 }
 
-//IterAgeEq iterates trough Person Age index with equal values
-func (col *PersonCollection) IterAgeEq(val int) *IterIndexPerson {
+//AgeEq iterates trough Person Age index with equal values
+func (col *PersonCollection) AgeEq(val int) *IterIndexPerson {
 	valDump := lexDumpInt(val)
 	prefix := append([]byte("$Person/Age/"), valDump...)
 	return &IterIndexPerson{
@@ -404,8 +405,8 @@ func (col *PersonCollection) IterAgeEq(val int) *IterIndexPerson {
 	}
 }
 
-//IterAgeRange iterates trough Person Age index in the specified range
-func (col *PersonCollection) IterAgeRange(start, limit int) *IterIndexPerson {
+//AgeRange iterates trough Person Age index in the specified range
+func (col *PersonCollection) AgeRange(start, limit int) *IterIndexPerson {
 	return &IterIndexPerson{
 		IterPerson{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
@@ -422,6 +423,7 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	if obj == nil {
 		return nil
 	}
+	//TODO doesn't have to call NewBuffer all the time
 	var buf *bytes.Buffer
 
 	for _, attr := range obj.Addresses {
@@ -450,6 +452,7 @@ func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *
 	if obj == nil {
 		return nil
 	}
+	//TODO doesn't have to call NewBuffer all the time
 	var buf *bytes.Buffer
 
 	buf = bytes.NewBuffer(prefix)

@@ -29,7 +29,7 @@ func TestOpen(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = db.Persons().Add(&Person{Name: "a", Lastname: "b", Age: 34})
+	_, err = db.Persons.Add(&Person{Name: "a", Lastname: "b", Age: 34})
 	if err == nil {
 		t.Error(err)
 	}
@@ -43,14 +43,14 @@ func TestAddGet(t *testing.T) {
 	}
 	defer db.Close()
 
-	id, err := db.Persons().Add(&Person{Name: "a", Lastname: "b", Age: 34})
+	id, err := db.Persons.Add(&Person{Name: "a", Lastname: "b", Age: 34})
 	if err != nil {
 		t.Error(err)
 	}
 	if id == 0 {
 		t.Error("id is zero")
 	}
-	p, err := db.Persons().Get(id)
+	p, err := db.Persons.Get(id)
 	if err != nil {
 		t.Error(err)
 	}
@@ -67,7 +67,7 @@ func TestAddDelete(t *testing.T) {
 	}
 	defer db.Close()
 
-	persons := db.Persons()
+	persons := db.Persons
 	id, err := persons.Add(personObj)
 	if err != nil {
 		t.Error(err)
@@ -151,7 +151,7 @@ func TestIter(t *testing.T) {
 	}
 
 	for i, p := range persons {
-		id, err := db.Persons().Add(p.p)
+		id, err := db.Persons.Add(p.p)
 		if err != nil {
 			t.Error(i, err)
 		}
@@ -161,7 +161,7 @@ func TestIter(t *testing.T) {
 		}
 	}
 
-	iter := db.Persons().All()
+	iter := db.Persons.All()
 	defer iter.Release()
 	num := 0
 	for iter.Next() {
@@ -179,7 +179,7 @@ func TestIter(t *testing.T) {
 	}
 
 	for i, p := range persons {
-		iterIndex := db.Persons().IterAgeEq(p.p.Age)
+		iterIndex := db.Persons.AgeEq(p.p.Age)
 		num = 0
 		for iterIndex.Next() {
 			person, err := iterIndex.Value()
@@ -206,7 +206,7 @@ func TestIter(t *testing.T) {
 		iterIndex.Release()
 	}
 
-	iterIndex := db.Persons().IterAddressCityRange("0", "ZZZZZZZZZZ")
+	iterIndex := db.Persons.AddressCityRange("0", "ZZZZZZZZZZ")
 	defer iterIndex.Release()
 	i := 0
 	indices := []int{0, 1, 2, 2}
@@ -249,7 +249,7 @@ func BenchmarkJson(b *testing.B) {
 	}
 	defer db.Close()
 
-	persons := db.Persons()
+	persons := db.Persons
 	for n := 0; n < b.N; n++ {
 		id, err := persons.Add(personObj)
 		if err != nil {
@@ -311,7 +311,7 @@ func BenchmarkGob(b *testing.B) {
 	}
 	defer db.Close()
 
-	persons := db.Persons()
+	persons := db.Persons
 	for n := 0; n < b.N; n++ {
 		id, err := persons.Add(personObj)
 		if err != nil {

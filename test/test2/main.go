@@ -17,7 +17,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	persons := db2.Persons()
+	persons := db2.Persons
 	id, err := persons.Add(&db.Person{
 		Name: "Foo",
 		Age:  20,
