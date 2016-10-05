@@ -84,7 +84,10 @@ if err != nil {
 iter := persons.All()
 defer iter.Release() //iter must be released
 for iter.Next() {
-	p := iter.Value()
+	p, err := iter.Value()
+	if err != nil {
+    	panic(err)
+	}
 	fmt.Println(p.Name, p.Lastname, p.Age)
 }
 ```
@@ -98,7 +101,10 @@ All substructs with specified indexes build also an index for the collection abo
 iter := db.Persons.AgeRange(30, 40)
 defer iter.Release()
 for iter.Next() {
-	p := iter.Value()
+	p, err := iter.Value()
+	if err != nil {
+    	panic(err)
+	}
 	fmt.Println(p.Name, p.Lastname, p.Age)
 }
 ```
@@ -108,7 +114,10 @@ for iter.Next() {
 iter := db.Persons.AddressCityEq("London")
 defer iter.Release()
 for iter.Next() {
-	p := iter.Value()
+	p, err := iter.Value()
+	if err != nil {
+    	panic(err)
+	}
 	fmt.Println(p.Name, p.Lastname, p.Age)
 }
 ```
