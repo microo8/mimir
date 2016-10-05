@@ -13,7 +13,8 @@ So you can easily store your actual structs (and not `[]byte` or `map[string]int
 The store operates on top of [leveldb](https://github.com/syndtr/goleveldb). The name is from the Norse mythology, [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) is a wisdom deity.
 
 * Mímir isn't stable, need more testing
-* Contribution of all kind welcome!
+* TODOs: more structs examples to test, add indexing support for all buildin types + time.Time
+* Contribution of all kind is welcome!
 
 example structs (structs.go):
 
@@ -93,7 +94,9 @@ for iter.Next() {
 	p := iter.Value()
 	fmt.Println(p.Name, p.Lastname, p.Age)
 }
+```
 
+```go
 //Iterating trough persons whitch have city in address equal to "London"
 iter := persons.IterAddressCityEq("London")
 defer iter.Release()
