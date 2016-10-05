@@ -19,7 +19,6 @@ import (
 
 //DBTEMPLATE the main mart of the db source
 const DBTEMPLATE = `//Package {{.PackageName}} genereated with github.com/microo8/mimir DO NOT MODIFY!
-
 package {{.PackageName}}
 {{$gen := .Structs}}
 import (
@@ -215,6 +214,7 @@ func (it *Iter) Release() {
 	it.it.Release()
 }
 
+//TODO collections can be attributes of db
 {{range $structName, $struct := $gen}}
 {{if $struct.Exported}}
 //{{$structName}}Collection represents the collection of {{$structName}}s
@@ -425,6 +425,7 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 	if obj == nil {
 		return nil
 	}
+	//TODO doesn't have to call NewBuffer all the time
 	var buf *bytes.Buffer
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
