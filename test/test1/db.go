@@ -153,6 +153,8 @@ type DB struct {
 	decode Decode
 
 	Persons *PersonCollection
+
+	Posts *PostCollection
 }
 
 //OpenDB opens the database
@@ -164,6 +166,8 @@ func OpenDB(path string, encode Encode, decode Decode) (*DB, error) {
 	db := &DB{db: ldb, encode: encode, decode: decode}
 
 	db.Persons = &PersonCollection{db: db}
+
+	db.Posts = &PostCollection{db: db}
 
 	return db, nil
 }
@@ -423,7 +427,6 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	if obj == nil {
 		return nil
 	}
-	//TODO doesn't have to call NewBuffer all the time
 	buf := bytes.NewBuffer(nil)
 
 	for _, attr := range obj.Addresses {
@@ -448,12 +451,222 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	return nil
 }
 
+//PostCollection represents the collection of Posts
+type PostCollection struct {
+	db *DB
+}
+
+//IterPost iterates trough all Post in db
+type IterPost struct {
+	*Iter
+	col *PostCollection
+}
+
+//Value returns the Post on witch is the iterator
+func (it *IterPost) Value() (*Post, error) {
+	data := it.it.Value()
+	var obj Post
+	err := it.col.db.decode(data, &obj)
+	if err != nil {
+		return nil, err
+	}
+	return &obj, nil
+}
+
+//IterIndexPost iterates trough an index for Post in db
+type IterIndexPost struct {
+	IterPost
+}
+
+//Value returns the Post on witch is the iterator
+func (it *IterIndexPost) Value() (*Post, error) {
+	key := it.it.Key()
+	index := bytes.LastIndexByte(key, '/')
+	if index == -1 {
+		return nil, fmt.Errorf("Index for Post has bad encoding")
+	}
+	id, err := lexLoadInt(key[index+1:])
+	if err != nil {
+		return nil, err
+	}
+	obj, err := it.col.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+func prefixPost(id int) []byte {
+	buf := bytes.NewBuffer([]byte("Post"))
+	buf.WriteRune('/')
+	buf.Write(lexDumpInt(id))
+	return buf.Bytes()
+}
+
+//Get returns Post with specified id or an error
+func (col *PostCollection) Get(id int) (*Post, error) {
+	data, err := col.db.db.Get(prefixPost(id), nil)
+	if err != nil {
+		return nil, err
+	}
+	var obj Post
+	err = col.db.decode(data, &obj)
+	if err != nil {
+		return nil, err
+	}
+	return &obj, nil
+}
+
+//Add inserts new Post to the db
+func (col *PostCollection) Add(obj *Post) (int, error) {
+	data, err := col.db.encode(&obj)
+	if err != nil {
+		return 0, err
+	}
+	batch := new(leveldb.Batch)
+	id := rand.Int()
+	batch.Put(prefixPost(id), data)
+	err = col.addIndex([]byte("$Post"), batch, id, obj)
+	if err != nil {
+		return 0, err
+	}
+	err = col.db.db.Write(batch, nil)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+//Update updates Post with specified id
+func (col *PostCollection) Update(id int, obj *Post) error {
+	key := prefixPost(id)
+	_, err := col.db.db.Get(key, nil)
+	if err != nil {
+		return fmt.Errorf("Post with id (%d) doesn't exist: %s", id, err)
+	}
+	data, err := col.db.encode(&obj)
+	if err != nil {
+		return err
+	}
+	batch := new(leveldb.Batch)
+	batch.Put(key, data)
+	err = col.removeIndex(batch, id)
+	if err != nil {
+		return err
+	}
+	err = col.addIndex([]byte("$Post"), batch, id, obj)
+	if err != nil {
+		return err
+	}
+	err = col.db.db.Write(batch, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+//Delete remoces Post from the db with specified id
+func (col *PostCollection) Delete(id int) error {
+	key := prefixPost(id)
+	_, err := col.db.db.Get(key, nil)
+	if err != nil {
+		return fmt.Errorf("Post with id (%d) doesn't exist: %s", id, err)
+	}
+	batch := new(leveldb.Batch)
+	batch.Delete(key)
+	err = col.removeIndex(batch, id)
+	if err != nil {
+		return err
+	}
+	err = col.db.db.Write(batch, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+//removeIndex TODO this doesn't have to iterate trough the whole collection
+func (col *PostCollection) removeIndex(batch *leveldb.Batch, id int) error {
+	iter := col.db.db.NewIterator(util.BytesPrefix([]byte("$Post")), nil)
+	for iter.Next() {
+		key := iter.Key()
+		index := bytes.LastIndexByte(key, '/')
+		if index == -1 {
+			return fmt.Errorf("Index for Post has bad encoding")
+		}
+		objID, err := lexLoadInt(key[index+1:])
+		if err != nil {
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		if id == objID {
+			batch.Delete(key)
+		}
+	}
+	iter.Release()
+	return iter.Error()
+}
+
+//All returns an iterator witch iterates trough all Posts
+func (col *PostCollection) All() *IterPost {
+	return &IterPost{
+		Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix([]byte("Post")), nil)},
+		col:  col,
+	}
+}
+
+//PIDEq iterates trough Post PID index with equal values
+func (col *PostCollection) PIDEq(val int) *IterIndexPost {
+	valDump := lexDumpInt(val)
+	prefix := append([]byte("$Post/PID/"), valDump...)
+	return &IterIndexPost{
+		IterPost{
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
+			col:  col,
+		},
+	}
+}
+
+//PIDRange iterates trough Post PID index in the specified range
+func (col *PostCollection) PIDRange(start, limit int) *IterIndexPost {
+	return &IterIndexPost{
+		IterPost{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
+				Start: append([]byte("$Post/PID/"), lexDumpInt(start)...),
+				Limit: append([]byte("$Post/PID/"), lexDumpInt(limit)...),
+			}, nil)},
+			col: col,
+		},
+	}
+}
+
+func (col *PostCollection) addIndex(prefix []byte, batch *leveldb.Batch, id int, obj *Post) (err error) {
+
+	if obj == nil {
+		return nil
+	}
+	buf := bytes.NewBuffer(nil)
+
+	buf.Reset()
+	buf.Write(prefix)
+	buf.WriteRune('/')
+	buf.WriteString("PID")
+	buf.WriteRune('/')
+	buf.Write(lexDumpInt(obj.PersonID))
+	buf.WriteRune('/')
+	buf.Write(lexDumpInt(id))
+	batch.Put(buf.Bytes(), nil)
+
+	return nil
+}
+
 func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *address) (err error) {
 
 	if obj == nil {
 		return nil
 	}
-	//TODO doesn't have to call NewBuffer all the time
 	buf := bytes.NewBuffer(nil)
 
 	buf.Reset()
