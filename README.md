@@ -44,7 +44,7 @@ Usage:
 //Open db file, codecs must be defined by you
 db, err := OpenDB("/tmp/mimirdb", json.Marshal, json.Unmarshal)
 if err != nil {
-	t.Error(err)
+	panic(err)
 }
 defer db.Close()
 
