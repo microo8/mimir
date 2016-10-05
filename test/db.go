@@ -270,7 +270,7 @@ func (col *PersonCollection) Add(obj *Person) (int, error) {
 	batch := new(leveldb.Batch)
 	id := rand.Int()
 	batch.Put(prefixPerson(id), data)
-	err = col.db.Persons().addIndex([]byte("$Person"), batch, id, obj)
+	err = col.addIndex([]byte("$Person"), batch, id, obj)
 	if err != nil {
 		return 0, err
 	}
@@ -286,7 +286,7 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 	key := prefixPerson(id)
 	_, err := col.db.db.Get(key, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("Person with id (%d) doesn't exist: %s", id, err)
 	}
 	data, err := col.db.encode(&obj)
 	if err != nil {
@@ -309,6 +309,27 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 	return nil
 }
 
+//Delete remoces Person from the db with specified id
+func (col *PersonCollection) Delete(id int) error {
+	key := prefixPerson(id)
+	_, err := col.db.db.Get(key, nil)
+	if err != nil {
+		return fmt.Errorf("Person with id (%d) doesn't exist: %s", id, err)
+	}
+	batch := new(leveldb.Batch)
+	batch.Delete(key)
+	err = col.removeIndex(batch, id)
+	if err != nil {
+		return err
+	}
+	err = col.db.db.Write(batch, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+//removeIndex TODO this doesn't have to iterate trough the whole collection
 func (col *PersonCollection) removeIndex(batch *leveldb.Batch, id int) error {
 	iter := col.db.db.NewIterator(util.BytesPrefix([]byte("$Person")), nil)
 	for iter.Next() {

@@ -52,13 +52,38 @@ func TestAddGet(t *testing.T) {
 	}
 	p, err := db.Persons().Get(id)
 	if err != nil {
+		t.Error(err)
 	}
 	if p.Name != "a" || p.Lastname != "b" || p.Age != 34 {
 		t.Error("getted person is not equal to the included")
-		t.Error(err)
 	}
 }
 
+func TestAddDelete(t *testing.T) {
+	os.RemoveAll(DBPATH)
+	db, err := OpenDB(DBPATH, json.Marshal, json.Unmarshal)
+	if err != nil {
+		t.Error(err)
+	}
+	defer db.Close()
+
+	persons := db.Persons()
+	id, err := persons.Add(personObj)
+	if err != nil {
+		t.Error(err)
+	}
+	if id == 0 {
+		t.Error("id is zero")
+	}
+	err = persons.Delete(id)
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = persons.Get(id)
+	if err == nil {
+		t.Error("Person deleted can't be Get back!")
+	}
+}
 func TestLexDumpInt(t *testing.T) {
 	data := []struct {
 		a, b int

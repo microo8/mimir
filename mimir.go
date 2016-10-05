@@ -291,7 +291,7 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
     batch := new(leveldb.Batch)
     id := rand.Int()
     batch.Put(prefix{{$structName}}(id), data)
-    err = col.db.{{$structName}}s().addIndex([]byte("${{$structName}}"), batch, id, obj)
+    err = col.addIndex([]byte("${{$structName}}"), batch, id, obj)
     if err != nil {
         return 0, err
     }
@@ -307,7 +307,7 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
     key := prefix{{$structName}}(id)
     _, err := col.db.db.Get(key, nil)
     if err != nil {
-        return err
+        return fmt.Errorf("{{$structName}} with id (%d) doesn't exist: %s", id, err)
     }
     data, err := col.db.encode(&obj)
     if err != nil {
@@ -330,6 +330,27 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
     return nil
 }
 
+//Delete remoces {{$structName}} from the db with specified id
+func (col *{{$structName}}Collection) Delete(id int) error {
+    key := prefix{{$structName}}(id)
+    _, err := col.db.db.Get(key, nil)
+    if err != nil {
+        return fmt.Errorf("{{$structName}} with id (%d) doesn't exist: %s", id, err)
+    }
+    batch := new(leveldb.Batch)
+	batch.Delete(key)
+    err = col.removeIndex(batch, id)
+    if err != nil {
+        return err
+    }
+    err = col.db.db.Write(batch, nil)
+    if err != nil {
+        return err
+    }
+    return nil
+}
+
+//removeIndex TODO this doesn't have to iterate trough the whole collection
 func (col *{{$structName}}Collection) removeIndex(batch *leveldb.Batch, id int) error {
     iter := col.db.db.NewIterator(util.BytesPrefix([]byte("${{$structName}}")), nil)
     for iter.Next() {
