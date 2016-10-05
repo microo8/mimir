@@ -1,5 +1,6 @@
-//file genereated with github.com/microo8/mimir DO NOT MODIFY!
-package main
+//Package db genereated with github.com/microo8/mimir DO NOT MODIFY!
+
+package db
 
 import (
 	"bytes"
@@ -190,6 +191,11 @@ func (it *Iter) Next() bool {
 	return it.it.Next()
 }
 
+//Release closes the iterator
+func (it *Iter) Release() {
+	it.it.Release()
+}
+
 //PersonCollection represents the collection of Persons
 type PersonCollection struct {
 	db *DB
@@ -298,7 +304,7 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 	if err != nil {
 		return err
 	}
-	err = col.addIndex([]byte("Person"), batch, id, obj)
+	err = col.addIndex([]byte("$Person"), batch, id, obj)
 	if err != nil {
 		return err
 	}
@@ -361,31 +367,6 @@ func (col *PersonCollection) All() *IterPerson {
 	}
 }
 
-//IterAddressCityEq iterates trough Person AddressCity index with equal values
-func (col *PersonCollection) IterAddressCityEq(val string) *IterIndexPerson {
-	valDump := lexDumpString(val)
-	prefix := append([]byte("$Person/AddressCity/"), valDump...)
-	return &IterIndexPerson{
-		IterPerson{
-			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
-			col:  col,
-		},
-	}
-}
-
-//IterAddressCityRange iterates trough Person AddressCity index in the specified range
-func (col *PersonCollection) IterAddressCityRange(start, limit string) *IterIndexPerson {
-	return &IterIndexPerson{
-		IterPerson{
-			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("$Person/AddressCity/"), lexDumpString(start)...),
-				Limit: append([]byte("$Person/AddressCity/"), lexDumpString(limit)...),
-			}, nil)},
-			col: col,
-		},
-	}
-}
-
 //IterAgeEq iterates trough Person Age index with equal values
 func (col *PersonCollection) IterAgeEq(val int) *IterIndexPerson {
 	valDump := lexDumpInt(val)
@@ -418,39 +399,11 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	}
 	var buf *bytes.Buffer
 
-	for _, attr := range obj.Addresses {
-
-		err = col.db.addaddressIndex(prefix, batch, id, attr)
-
-		if err != nil {
-			return err
-		}
-	}
-
 	buf = bytes.NewBuffer(prefix)
 	buf.WriteRune('/')
 	buf.WriteString("Age")
 	buf.WriteRune('/')
 	buf.Write(lexDumpInt(obj.Age))
-	buf.WriteRune('/')
-	buf.Write(lexDumpInt(id))
-	batch.Put(buf.Bytes(), nil)
-
-	return nil
-}
-
-func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *address) (err error) {
-
-	if obj == nil {
-		return nil
-	}
-	var buf *bytes.Buffer
-
-	buf = bytes.NewBuffer(prefix)
-	buf.WriteRune('/')
-	buf.WriteString("AddressCity")
-	buf.WriteRune('/')
-	buf.Write(lexDumpString(obj.City))
 	buf.WriteRune('/')
 	buf.Write(lexDumpInt(id))
 	batch.Put(buf.Bytes(), nil)

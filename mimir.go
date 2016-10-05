@@ -18,7 +18,8 @@ import (
 )
 
 //DBTEMPLATE the main mart of the db source
-const DBTEMPLATE = `//file genereated with github.com/microo8/mimir DO NOT MODIFY!
+const DBTEMPLATE = `//Package {{.PackageName}} genereated with github.com/microo8/mimir DO NOT MODIFY!
+
 package {{.PackageName}}
 {{$gen := .Structs}}
 import (
@@ -209,6 +210,11 @@ func (it *Iter) Next() bool {
 	return it.it.Next()
 }
 
+//Release closes the iterator
+func (it *Iter) Release() {
+	it.it.Release()
+}
+
 {{range $structName, $struct := $gen}}
 {{if $struct.Exported}}
 //{{$structName}}Collection represents the collection of {{$structName}}s
@@ -319,7 +325,7 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
     if err != nil {
         return err
     }
-    err = col.addIndex([]byte("{{$structName}}"), batch, id, obj)
+    err = col.addIndex([]byte("${{$structName}}"), batch, id, obj)
     if err != nil {
         return err
     }

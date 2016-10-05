@@ -74,6 +74,7 @@ if err != nil {
 
 //Iterate trough the all persons in the Persons Collection
 iter := persons.All()
+defer iter.Release()
 for iter.Next() {
 	p := iter.Value()
 	fmt.Println(p.Name, p.Lastname, p.Age)
@@ -87,6 +88,7 @@ All substructs with specified indexes build also an index for the collection abo
 ```go
 //Iterating trough persons with Age in range 30-40
 iter := persons.IterAgeRange(30, 40)
+defer iter.Release()
 for iter.Next() {
 	p := iter.Value()
 	fmt.Println(p.Name, p.Lastname, p.Age)
@@ -94,6 +96,7 @@ for iter.Next() {
 
 //Iterating trough persons whitch have city in address equal to "London"
 iter := persons.IterAddressCityEq("London")
+defer iter.Release()
 for iter.Next() {
 	p := iter.Value()
 	fmt.Println(p.Name, p.Lastname, p.Age)
