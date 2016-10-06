@@ -42,8 +42,8 @@ generate db code: `mimir structs.go`
 Usage:
 
 ```go
-//Open db file, codecs must be defined by you
-db, err := OpenDB("/tmp/mimirdb", json.Marshal, json.Unmarshal)
+//Open db file
+db, err := OpenDB("/tmp/mimirdb")
 if err != nil {
 	panic(err)
 }

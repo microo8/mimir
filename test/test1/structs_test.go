@@ -6,23 +6,20 @@ package main
 
 import (
 	"bytes"
-	"encoding/gob"
-	"encoding/json"
 	"os"
-	"sync"
 	"testing"
 	"time"
 )
 
-const DBPATH = "/home/micro/meh"
+const DBPATH = "/tmp/mimir_test"
 
 func TestOpen(t *testing.T) {
 	os.RemoveAll(DBPATH)
-	db, err := OpenDB("/", json.Marshal, json.Unmarshal)
+	db, err := OpenDB("/")
 	if err == nil {
 		t.Error("DB opened in not existing path")
 	}
-	db, err = OpenDB(DBPATH, json.Marshal, json.Unmarshal)
+	db, err = OpenDB(DBPATH)
 	if err != nil {
 		t.Error(err)
 	}
@@ -38,7 +35,7 @@ func TestOpen(t *testing.T) {
 
 func TestAddGet(t *testing.T) {
 	os.RemoveAll(DBPATH)
-	db, err := OpenDB(DBPATH, json.Marshal, json.Unmarshal)
+	db, err := OpenDB(DBPATH)
 	if err != nil {
 		t.Error(err)
 	}
@@ -62,7 +59,7 @@ func TestAddGet(t *testing.T) {
 
 func TestAddDelete(t *testing.T) {
 	os.RemoveAll(DBPATH)
-	db, err := OpenDB(DBPATH, json.Marshal, json.Unmarshal)
+	db, err := OpenDB(DBPATH)
 	if err != nil {
 		t.Error(err)
 	}
@@ -126,7 +123,7 @@ type IterPersonID struct {
 
 func TestIter(t *testing.T) {
 	os.RemoveAll(DBPATH)
-	db, err := OpenDB(DBPATH, json.Marshal, json.Unmarshal)
+	db, err := OpenDB(DBPATH)
 	if err != nil {
 		t.Error(err)
 	}
@@ -168,7 +165,7 @@ func TestIter(t *testing.T) {
 	for iter.Next() {
 		_, err := iter.Value()
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		if iter.ID() == 0 {
 			t.Error("IterPersonAll id is 0")
@@ -255,86 +252,3 @@ var personObj = &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses
 	&address{Street: "Bla", Number: 666, City: "Hell"},
 	&address{Street: "Bla", Number: 666, City: "Hell"},
 }}
-
-func BenchmarkJson(b *testing.B) {
-	os.RemoveAll(DBPATH)
-	db, err := OpenDB(DBPATH, json.Marshal, json.Unmarshal)
-	if err != nil {
-		b.Error(err)
-	}
-	defer db.Close()
-
-	persons := db.Persons
-	for n := 0; n < b.N; n++ {
-		id, err := persons.Add(personObj)
-		if err != nil {
-			b.Error(err)
-		}
-		person, err := persons.Get(id)
-		if err != nil {
-			b.Error(err, person)
-		}
-	}
-}
-
-type GobCodec struct {
-	lock sync.Mutex
-	buf  *bytes.Buffer
-	enc  *gob.Encoder
-	dec  *gob.Decoder
-}
-
-func NewGobCodec() *GobCodec {
-	buf := bytes.NewBuffer(nil)
-	return &GobCodec{
-		buf: buf,
-		enc: gob.NewEncoder(buf),
-		dec: gob.NewDecoder(buf),
-	}
-}
-
-func (c *GobCodec) Marshal(v interface{}) ([]byte, error) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	c.buf.Reset()
-	err := c.enc.Encode(v)
-	if err != nil {
-		return nil, err
-	}
-	return c.buf.Bytes(), nil
-}
-
-func (c *GobCodec) Unmarshal(data []byte, v interface{}) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	c.buf.Reset()
-	c.buf.Write(data)
-	err := c.dec.Decode(v)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func BenchmarkGob(b *testing.B) {
-	os.RemoveAll(DBPATH)
-
-	codec := NewGobCodec()
-	db, err := OpenDB(DBPATH, codec.Marshal, codec.Unmarshal)
-	if err != nil {
-		b.Error(err)
-	}
-	defer db.Close()
-
-	persons := db.Persons
-	for n := 0; n < b.N; n++ {
-		id, err := persons.Add(personObj)
-		if err != nil {
-			b.Error(err)
-		}
-		person, err := persons.Get(id)
-		if err != nil {
-			b.Error(err, person)
-		}
-	}
-}

@@ -44,6 +44,7 @@ package {{.PackageName}}
 {{$gen := .Structs}}
 import (
     "bytes"
+	"encoding/json"
 	"fmt"
 	"math"
     "math/rand"
@@ -62,6 +63,10 @@ const (
 	intSmall    = IntMax - intZero - intMaxWidth
 	IntMax		= 0xfd
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 //lexDump functions for encoding values to lexicographically ordered byte array
 func lexDumpString(v string) []byte {
@@ -241,29 +246,22 @@ func lexLoadUint(b []byte) (uint, error) {
 	return v, nil
 }
 
-//Encode is an function for encoding objects to bytes
-type Encode func(interface{}) ([]byte, error)
-//Decode is an function for decoding objects from bytes
-type Decode func([]byte, interface{}) error
-
 //DB handler to the db
 type DB struct {
     db     *leveldb.DB
-    //TODO check if changes in objs don't change decoding in json/gob than add just one encoding
-	encode Encode
-	decode Decode
     {{range $structName, $struct := $gen}}{{if $struct.Exported}}
     {{$structName}}s *{{$structName}}Collection
 	{{end}}{{end}}
 }
 
 //OpenDB opens the database
-func OpenDB(path string, encode Encode, decode Decode) (*DB, error) {
+func OpenDB(path string) (*DB, error) {
     ldb, err := leveldb.OpenFile(path, nil)
     if err != nil {
         return nil, err
     }
-    db := &DB{db: ldb, encode: encode, decode: decode}
+    db := new(DB)
+	db.db = ldb
     {{range $structName, $struct := $gen}}{{if $struct.Exported}}
 	db.{{$structName}}s = &{{$structName}}Collection{db: db}
 	{{end}}{{end}}
@@ -321,7 +319,7 @@ type Iter{{$structName}} struct {
 func (it *Iter{{$structName}}) Value() (*{{$structName}}, error) {
 	data := it.it.Value()
 	var obj {{$structName}}
-	err := it.col.db.decode(data, &obj)
+	err := json.Unmarshal(data, &obj)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +363,7 @@ func (col *{{$structName}}Collection) Get(id int) (*{{$structName}}, error) {
 		return nil, err
 	}
 	var obj {{$structName}}
-	err = col.db.decode(data, &obj)
+	err = json.Unmarshal(data, &obj)
 	if err != nil {
 		return nil, err
 	}
@@ -374,17 +372,23 @@ func (col *{{$structName}}Collection) Get(id int) (*{{$structName}}, error) {
 
 //Add inserts new {{$structName}} to the db
 func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
-    data, err := col.db.encode(&obj)
+    data, err := json.Marshal(obj)
     if err != nil {
         return 0, err
     }
     batch := new(leveldb.Batch)
     id := rand.Int()
+	tmpObj, err := col.Get(id)
+	if tmpObj != nil {
+		return -1, fmt.Errorf("ID collision: {{$structName}} with id (%d) exists", id)
+	}
     batch.Put(prefix{{$structName}}(id), data)
+	{{if hasIndex $structName}}
     err = col.addIndex([]byte("${{$structName}}"), batch, id, obj)
     if err != nil {
         return 0, err
     }
+	{{end}}
     err = col.db.db.Write(batch, nil)
     if err != nil {
         return 0, err
@@ -399,7 +403,7 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
     if err != nil {
         return fmt.Errorf("{{$structName}} with id (%d) doesn't exist: %s", id, err)
     }
-    data, err := col.db.encode(&obj)
+    data, err := json.Marshal(obj)
     if err != nil {
         return err
     }
@@ -409,10 +413,12 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
     if err != nil {
         return err
     }
+	{{if hasIndex $structName}}
     err = col.addIndex([]byte("${{$structName}}"), batch, id, obj)
     if err != nil {
         return err
     }
+	{{end}}
     err = col.db.db.Write(batch, nil)
     if err != nil {
         return err
@@ -484,6 +490,8 @@ func (col *{{$structName}}Collection) {{$indexName}}Eq(val {{$subType}}) *IterIn
 		},
 	}
 }
+
+//TODO Range iter should take pointers and then nil represents +/- infinite
 
 //{{$indexName}}Range iterates trough {{$structName}} {{$indexName}} index in the specified range
 func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit {{$subType}}) *IterIndex{{$structName}} {
@@ -579,7 +587,6 @@ func Parse(filename string) (*DBGenerator, error) {
 		return nil, fmt.Errorf("Error in parsing file %s: %s", filename, err)
 	}
 	gen := &DBGenerator{Structs: make(map[string]*Struct), PackageName: f.Name.Name}
-	ast.Print(fset, f)
 	ast.Inspect(f, func(node ast.Node) bool {
 		typ, ok := node.(*ast.GenDecl)
 		if !ok || typ.Tok != token.TYPE {
@@ -614,20 +621,27 @@ func parseStructType(gen *DBGenerator, structSpec *ast.TypeSpec, structType *ast
 			if field.Tag != nil && field.Tag.Kind == token.STRING {
 				if field.Tag.Value[:8] == "`index:\"" {
 					attr.Index = field.Tag.Value[8 : len(field.Tag.Value)-2]
-				} else {
-					fmt.Printf("WARNING: Field %s in struct %s has not valid tag (%s) on line %d\n",
-						name.Name,
-						structSpec.Name.Name,
-						field.Tag.Value,
-						fset.File(field.Tag.Pos()).Line(field.Tag.Pos()),
-					)
 				}
 			}
 			switch typ := field.Type.(type) {
 			case *ast.Ident:
 				attr.Type = typ.Name
 			case *ast.StarExpr:
-				attr.Type = "*" + typ.X.(*ast.Ident).Name
+				switch starType := typ.X.(type) {
+				case *ast.Ident:
+					attr.Type = "*" + starType.Name
+				case *ast.SelectorExpr:
+					switch selectorIdent := starType.X.(type) {
+					case *ast.Ident:
+						attr.Type = fmt.Sprintf("*%s.%s", selectorIdent.Name, starType.Sel.Name)
+					default:
+						fmt.Printf("Error: Unknown array type %s at line %d\n", selectorIdent, fset.File(selectorIdent.Pos()).Line(selectorIdent.Pos()))
+						os.Exit(1)
+					}
+				default:
+					fmt.Printf("Error: Unknown pointer type %s at line %d\n", typ.X, fset.File(typ.X.Pos()).Line(typ.X.Pos()))
+					os.Exit(1)
+				}
 			case *ast.ArrayType:
 				switch expr := typ.Elt.(type) {
 				case *ast.Ident:

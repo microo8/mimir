@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
@@ -21,6 +22,10 @@ const (
 	intSmall    = IntMax - intZero - intMaxWidth
 	IntMax      = 0xfd
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 //lexDump functions for encoding values to lexicographically ordered byte array
 func lexDumpString(v string) []byte {
@@ -200,29 +205,21 @@ func lexLoadUint(b []byte) (uint, error) {
 	return v, nil
 }
 
-//Encode is an function for encoding objects to bytes
-type Encode func(interface{}) ([]byte, error)
-
-//Decode is an function for decoding objects from bytes
-type Decode func([]byte, interface{}) error
-
 //DB handler to the db
 type DB struct {
 	db *leveldb.DB
-	//TODO check if changes in objs don't change decoding in json/gob than add just one encoding
-	encode Encode
-	decode Decode
 
 	Persons *PersonCollection
 }
 
 //OpenDB opens the database
-func OpenDB(path string, encode Encode, decode Decode) (*DB, error) {
+func OpenDB(path string) (*DB, error) {
 	ldb, err := leveldb.OpenFile(path, nil)
 	if err != nil {
 		return nil, err
 	}
-	db := &DB{db: ldb, encode: encode, decode: decode}
+	db := new(DB)
+	db.db = ldb
 
 	db.Persons = &PersonCollection{db: db}
 
@@ -278,7 +275,7 @@ type IterPerson struct {
 func (it *IterPerson) Value() (*Person, error) {
 	data := it.it.Value()
 	var obj Person
-	err := it.col.db.decode(data, &obj)
+	err := json.Unmarshal(data, &obj)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +319,7 @@ func (col *PersonCollection) Get(id int) (*Person, error) {
 		return nil, err
 	}
 	var obj Person
-	err = col.db.decode(data, &obj)
+	err = json.Unmarshal(data, &obj)
 	if err != nil {
 		return nil, err
 	}
@@ -331,17 +328,23 @@ func (col *PersonCollection) Get(id int) (*Person, error) {
 
 //Add inserts new Person to the db
 func (col *PersonCollection) Add(obj *Person) (int, error) {
-	data, err := col.db.encode(&obj)
+	data, err := json.Marshal(obj)
 	if err != nil {
 		return 0, err
 	}
 	batch := new(leveldb.Batch)
 	id := rand.Int()
+	tmpObj, err := col.Get(id)
+	if tmpObj != nil {
+		return -1, fmt.Errorf("ID collision: Person with id (%d) exists", id)
+	}
 	batch.Put(prefixPerson(id), data)
+
 	err = col.addIndex([]byte("$Person"), batch, id, obj)
 	if err != nil {
 		return 0, err
 	}
+
 	err = col.db.db.Write(batch, nil)
 	if err != nil {
 		return 0, err
@@ -356,7 +359,7 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 	if err != nil {
 		return fmt.Errorf("Person with id (%d) doesn't exist: %s", id, err)
 	}
-	data, err := col.db.encode(&obj)
+	data, err := json.Marshal(obj)
 	if err != nil {
 		return err
 	}
@@ -366,10 +369,12 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 	if err != nil {
 		return err
 	}
+
 	err = col.addIndex([]byte("$Person"), batch, id, obj)
 	if err != nil {
 		return err
 	}
+
 	err = col.db.db.Write(batch, nil)
 	if err != nil {
 		return err
@@ -441,6 +446,8 @@ func (col *PersonCollection) AddressCityEq(val string) *IterIndexPerson {
 	}
 }
 
+//TODO Range iter should take pointers and then nil represents +/- infinite
+
 //AddressCityRange iterates trough Person AddressCity index in the specified range
 func (col *PersonCollection) AddressCityRange(start, limit string) *IterIndexPerson {
 	return &IterIndexPerson{
@@ -465,6 +472,8 @@ func (col *PersonCollection) AgeEq(val int) *IterIndexPerson {
 		},
 	}
 }
+
+//TODO Range iter should take pointers and then nil represents +/- infinite
 
 //AgeRange iterates trough Person Age index in the specified range
 func (col *PersonCollection) AgeRange(start, limit int) *IterIndexPerson {
@@ -491,6 +500,8 @@ func (col *PersonCollection) BirthEq(val time.Time) *IterIndexPerson {
 	}
 }
 
+//TODO Range iter should take pointers and then nil represents +/- infinite
+
 //BirthRange iterates trough Person Birth index in the specified range
 func (col *PersonCollection) BirthRange(start, limit time.Time) *IterIndexPerson {
 	return &IterIndexPerson{
@@ -515,6 +526,8 @@ func (col *PersonCollection) ContractEq(val []byte) *IterIndexPerson {
 		},
 	}
 }
+
+//TODO Range iter should take pointers and then nil represents +/- infinite
 
 //ContractRange iterates trough Person Contract index in the specified range
 func (col *PersonCollection) ContractRange(start, limit []byte) *IterIndexPerson {
