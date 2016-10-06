@@ -3,9 +3,11 @@ package db
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
+	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -21,6 +23,10 @@ const (
 	IntMax      = 0xfd
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 //lexDump functions for encoding values to lexicographically ordered byte array
 func lexDumpString(v string) []byte {
 	return []byte(v)
@@ -35,6 +41,10 @@ func lexDumpBool(v bool) []byte {
 
 func lexDumpInt(v int) []byte {
 	return lexDumpInt64(int64(v))
+}
+
+func lexDumpUint(v int) []byte {
+	return lexDumpUint64(uint64(v))
 }
 
 func lexDumpInt64(v int64) []byte {
@@ -82,6 +92,62 @@ func lexDumpUint64(v uint64) []byte {
 	default:
 		return []byte{IntMax, byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32), byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
 	}
+}
+
+func lexDumpInt8(v int8) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpInt16(v int16) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpInt32(v int32) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpUint8(v uint8) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpUint16(v int16) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpUint32(v int32) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpFloat32(v float32) []byte {
+	return lexDumpUint64(uint64(math.Float32bits(v)))
+}
+
+func lexDumpFloat64(v float64) []byte {
+	return lexDumpUint64(math.Float64bits(v))
+}
+
+func lexDumpByte(v byte) []byte {
+	return []byte{v}
+}
+
+func lexDumpRune(v rune) []byte {
+	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+}
+
+func lexDumpBytes(v []byte) []byte {
+	return v
+}
+
+func lexDumpRunes(v []rune) []byte {
+	return []byte(string(v))
+}
+
+func lexDumpTime(v time.Time) []byte {
+	unix := v.Unix()
+	nano := int64(v.Nanosecond())
+	ret := lexDumpInt64(unix)
+	ret = append(ret, lexDumpInt64(nano)...)
+	return ret
 }
 
 func lexLoadInt(b []byte) (int, error) {
@@ -139,29 +205,21 @@ func lexLoadUint(b []byte) (uint, error) {
 	return v, nil
 }
 
-//Encode is an function for encoding objects to bytes
-type Encode func(interface{}) ([]byte, error)
-
-//Decode is an function for decoding objects from bytes
-type Decode func([]byte, interface{}) error
-
 //DB handler to the db
 type DB struct {
 	db *leveldb.DB
-	//TODO check if changes in objs don't change decoding in json/gob than add just one encoding
-	encode Encode
-	decode Decode
 
 	Persons *PersonCollection
 }
 
 //OpenDB opens the database
-func OpenDB(path string, encode Encode, decode Decode) (*DB, error) {
+func OpenDB(path string) (*DB, error) {
 	ldb, err := leveldb.OpenFile(path, nil)
 	if err != nil {
 		return nil, err
 	}
-	db := &DB{db: ldb, encode: encode, decode: decode}
+	db := new(DB)
+	db.db = ldb
 
 	db.Persons = &PersonCollection{db: db}
 
@@ -217,7 +275,7 @@ type IterPerson struct {
 func (it *IterPerson) Value() (*Person, error) {
 	data := it.it.Value()
 	var obj Person
-	err := it.col.db.decode(data, &obj)
+	err := json.Unmarshal(data, &obj)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +319,7 @@ func (col *PersonCollection) Get(id int) (*Person, error) {
 		return nil, err
 	}
 	var obj Person
-	err = col.db.decode(data, &obj)
+	err = json.Unmarshal(data, &obj)
 	if err != nil {
 		return nil, err
 	}
@@ -270,17 +328,23 @@ func (col *PersonCollection) Get(id int) (*Person, error) {
 
 //Add inserts new Person to the db
 func (col *PersonCollection) Add(obj *Person) (int, error) {
-	data, err := col.db.encode(&obj)
+	data, err := json.Marshal(obj)
 	if err != nil {
 		return 0, err
 	}
 	batch := new(leveldb.Batch)
 	id := rand.Int()
+	tmpObj, err := col.Get(id)
+	if tmpObj != nil {
+		return -1, fmt.Errorf("ID collision: Person with id (%d) exists", id)
+	}
 	batch.Put(prefixPerson(id), data)
+
 	err = col.addIndex([]byte("$Person"), batch, id, obj)
 	if err != nil {
 		return 0, err
 	}
+
 	err = col.db.db.Write(batch, nil)
 	if err != nil {
 		return 0, err
@@ -295,7 +359,7 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 	if err != nil {
 		return fmt.Errorf("Person with id (%d) doesn't exist: %s", id, err)
 	}
-	data, err := col.db.encode(&obj)
+	data, err := json.Marshal(obj)
 	if err != nil {
 		return err
 	}
@@ -305,10 +369,12 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 	if err != nil {
 		return err
 	}
+
 	err = col.addIndex([]byte("$Person"), batch, id, obj)
 	if err != nil {
 		return err
 	}
+
 	err = col.db.db.Write(batch, nil)
 	if err != nil {
 		return err
@@ -381,12 +447,24 @@ func (col *PersonCollection) AgeEq(val int) *IterIndexPerson {
 }
 
 //AgeRange iterates trough Person Age index in the specified range
-func (col *PersonCollection) AgeRange(start, limit int) *IterIndexPerson {
+func (col *PersonCollection) AgeRange(start, limit *int) *IterIndexPerson {
+	startDump := []byte("$Person/Age/")
+	if start != nil {
+		startDump = append(startDump, lexDumpInt(*start)...)
+	}
+	var limitDump []byte
+	if limit != nil {
+		limitDump = append([]byte("$Person/Age/"), lexDumpInt(*limit)...)
+	} else {
+		prefix := []byte("$Person/Age/")
+		rangePrefix := util.BytesPrefix(prefix)
+		limitDump = rangePrefix.Limit
+	}
 	return &IterIndexPerson{
 		IterPerson{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("$Person/Age/"), lexDumpInt(start)...),
-				Limit: append([]byte("$Person/Age/"), lexDumpInt(limit)...),
+				Start: startDump,
+				Limit: limitDump,
 			}, nil)},
 			col: col,
 		},
@@ -398,10 +476,10 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	if obj == nil {
 		return nil
 	}
-	//TODO doesn't have to call NewBuffer all the time
-	var buf *bytes.Buffer
+	var buf bytes.Buffer
 
-	buf = bytes.NewBuffer(prefix)
+	buf.Reset()
+	buf.Write(prefix)
 	buf.WriteRune('/')
 	buf.WriteString("Age")
 	buf.WriteRune('/')
