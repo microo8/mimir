@@ -446,15 +446,25 @@ func (col *PersonCollection) AddressCityEq(val string) *IterIndexPerson {
 	}
 }
 
-//TODO Range iter should take pointers and then nil represents +/- infinite
-
 //AddressCityRange iterates trough Person AddressCity index in the specified range
-func (col *PersonCollection) AddressCityRange(start, limit string) *IterIndexPerson {
+func (col *PersonCollection) AddressCityRange(start, limit *string) *IterIndexPerson {
+	startDump := []byte("$Person/AddressCity/")
+	if start != nil {
+		startDump = append(startDump, lexDumpString(*start)...)
+	}
+	var limitDump []byte
+	if limit != nil {
+		limitDump = append([]byte("$Person/AddressCity/"), lexDumpString(*limit)...)
+	} else {
+		prefix := []byte("$Person/AddressCity/")
+		rangePrefix := util.BytesPrefix(prefix)
+		limitDump = rangePrefix.Limit
+	}
 	return &IterIndexPerson{
 		IterPerson{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("$Person/AddressCity/"), lexDumpString(start)...),
-				Limit: append([]byte("$Person/AddressCity/"), lexDumpString(limit)...),
+				Start: startDump,
+				Limit: limitDump,
 			}, nil)},
 			col: col,
 		},
@@ -473,15 +483,25 @@ func (col *PersonCollection) AgeEq(val int) *IterIndexPerson {
 	}
 }
 
-//TODO Range iter should take pointers and then nil represents +/- infinite
-
 //AgeRange iterates trough Person Age index in the specified range
-func (col *PersonCollection) AgeRange(start, limit int) *IterIndexPerson {
+func (col *PersonCollection) AgeRange(start, limit *int) *IterIndexPerson {
+	startDump := []byte("$Person/Age/")
+	if start != nil {
+		startDump = append(startDump, lexDumpInt(*start)...)
+	}
+	var limitDump []byte
+	if limit != nil {
+		limitDump = append([]byte("$Person/Age/"), lexDumpInt(*limit)...)
+	} else {
+		prefix := []byte("$Person/Age/")
+		rangePrefix := util.BytesPrefix(prefix)
+		limitDump = rangePrefix.Limit
+	}
 	return &IterIndexPerson{
 		IterPerson{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("$Person/Age/"), lexDumpInt(start)...),
-				Limit: append([]byte("$Person/Age/"), lexDumpInt(limit)...),
+				Start: startDump,
+				Limit: limitDump,
 			}, nil)},
 			col: col,
 		},
@@ -500,15 +520,25 @@ func (col *PersonCollection) BirthEq(val time.Time) *IterIndexPerson {
 	}
 }
 
-//TODO Range iter should take pointers and then nil represents +/- infinite
-
 //BirthRange iterates trough Person Birth index in the specified range
-func (col *PersonCollection) BirthRange(start, limit time.Time) *IterIndexPerson {
+func (col *PersonCollection) BirthRange(start, limit *time.Time) *IterIndexPerson {
+	startDump := []byte("$Person/Birth/")
+	if start != nil {
+		startDump = append(startDump, lexDumpTime(*start)...)
+	}
+	var limitDump []byte
+	if limit != nil {
+		limitDump = append([]byte("$Person/Birth/"), lexDumpTime(*limit)...)
+	} else {
+		prefix := []byte("$Person/Birth/")
+		rangePrefix := util.BytesPrefix(prefix)
+		limitDump = rangePrefix.Limit
+	}
 	return &IterIndexPerson{
 		IterPerson{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("$Person/Birth/"), lexDumpTime(start)...),
-				Limit: append([]byte("$Person/Birth/"), lexDumpTime(limit)...),
+				Start: startDump,
+				Limit: limitDump,
 			}, nil)},
 			col: col,
 		},
@@ -527,15 +557,25 @@ func (col *PersonCollection) ContractEq(val []byte) *IterIndexPerson {
 	}
 }
 
-//TODO Range iter should take pointers and then nil represents +/- infinite
-
 //ContractRange iterates trough Person Contract index in the specified range
-func (col *PersonCollection) ContractRange(start, limit []byte) *IterIndexPerson {
+func (col *PersonCollection) ContractRange(start, limit *[]byte) *IterIndexPerson {
+	startDump := []byte("$Person/Contract/")
+	if start != nil {
+		startDump = append(startDump, lexDumpBytes(*start)...)
+	}
+	var limitDump []byte
+	if limit != nil {
+		limitDump = append([]byte("$Person/Contract/"), lexDumpBytes(*limit)...)
+	} else {
+		prefix := []byte("$Person/Contract/")
+		rangePrefix := util.BytesPrefix(prefix)
+		limitDump = rangePrefix.Limit
+	}
 	return &IterIndexPerson{
 		IterPerson{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("$Person/Contract/"), lexDumpBytes(start)...),
-				Limit: append([]byte("$Person/Contract/"), lexDumpBytes(limit)...),
+				Start: startDump,
+				Limit: limitDump,
 			}, nil)},
 			col: col,
 		},

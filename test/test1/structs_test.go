@@ -204,7 +204,8 @@ func TestIter(t *testing.T) {
 		iterIndex.Release()
 	}
 
-	iterIndex := db.Persons.AddressCityRange("0", "ZZZZZZZZZZ")
+	s := "0"
+	iterIndex := db.Persons.AddressCityRange(&s, nil)
 	i := 0
 	indices := []int{0, 1, 2, 2}
 	for iterIndex.Next() {

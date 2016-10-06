@@ -491,15 +491,25 @@ func (col *{{$structName}}Collection) {{$indexName}}Eq(val {{$subType}}) *IterIn
 	}
 }
 
-//TODO Range iter should take pointers and then nil represents +/- infinite
-
 //{{$indexName}}Range iterates trough {{$structName}} {{$indexName}} index in the specified range
-func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit {{$subType}}) *IterIndex{{$structName}} {
+func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit *{{$subType}}) *IterIndex{{$structName}} {
+	startDump := []byte("${{$structName}}/{{$indexName}}/")
+	if start != nil {
+		startDump = append(startDump, lexDump{{lexType $subType}}(*start)...)
+	}
+	var limitDump []byte
+	if limit != nil {
+		limitDump = append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{lexType $subType}}(*limit)...)
+	} else {
+		prefix := []byte("${{$structName}}/{{$indexName}}/")
+		rangePrefix := util.BytesPrefix(prefix)
+		limitDump = rangePrefix.Limit
+	}
 	return &IterIndex{{$structName}}{
 		Iter{{$structName}}{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{lexType $subType}}(start)...),
-				Limit: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{lexType $subType}}(limit)...),
+				Start: startDump,
+				Limit: limitDump,
 			}, nil)},
 			col: col,
 		},

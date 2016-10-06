@@ -98,8 +98,9 @@ In the example above `Person.Age` has an index with name `"Age"` and `address.Ci
 All substructs with specified indexes build also an index for the collection above. So `"AddressCity"` is an index for Persons.
 
 ```go
-//Iterating trough persons with Age in range 30-40
-iter := db.Persons.AgeRange(30, 40)
+//Iterating trough persons with Age in range 30-40 (if passed nil it means -/+ infinity)
+fromAge, toAge := 30, 40
+iter := db.Persons.AgeRange(&fromAge, &toAge)
 defer iter.Release()
 for iter.Next() {
 	p, err := iter.Value()
