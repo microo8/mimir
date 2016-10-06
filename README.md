@@ -10,10 +10,11 @@ When you trying to make a little tool that has to save some objects somewhere, i
 That's why `Mímir` was created! It takes structs from an go file and generates code to store, retrieve and iterate trough collections of objects defined by parsed structs.
 So you can easily store your actual structs (and not `[]byte` or `map[string]interface{}`).
 
-The store operates on top of [leveldb](https://github.com/syndtr/goleveldb). The name is from the Norse mythology, [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) is a wisdom deity.
+Indexing of all builtin types + `time.Time` supported!
 
-* Mímir isn't stable, need more testing
-* TODOs: more structs examples to test, add indexing support for all buildin types + time.Time
+The store operates on top of [leveldb](https://github.com/syndtr/goleveldb). [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) is a wisdom deity from the Norse mythology.
+
+* TODOs: more structs examples to test; test, test, test; optimize/benchmark; maybe some goroutines?
 * Contribution of all kind is welcome!
 
 example structs (structs.go):

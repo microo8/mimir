@@ -13,9 +13,30 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"os"
 	"strings"
 	"text/template"
 )
+
+var (
+	//INDEXABLE is an array of type names whitch have supported lexDump
+	INDEXABLE = map[string]string{
+		"int": "Int", "int8": "Int8", "int16": "Int16", "int32": "Int32", "int64": "Int64",
+		"uint": "Uint", "uint8": "Uint8", "uint16": "Uint16", "uint32": "Uint32", "uint64": "Uint64",
+		"float32": "Float32", "float64": "Float64",
+		"string": "String", "rune": "Rune", "byte": "Byte", "[]rune": "Runes", "[]byte": "Bytes",
+		"time.Time": "Time",
+	}
+)
+
+func lexType(typ string) string {
+	lex, ok := INDEXABLE[typ]
+	if !ok {
+		fmt.Printf("Error: type %s is not indexable", typ)
+		return ""
+	}
+	return lex
+}
 
 //DBTEMPLATE the main mart of the db source
 const DBTEMPLATE = `//Package {{.PackageName}} genereated with github.com/microo8/mimir DO NOT MODIFY!
@@ -26,6 +47,7 @@ import (
 	"fmt"
 	"math"
     "math/rand"
+	"time"
 
     "github.com/syndtr/goleveldb/leveldb"
     "github.com/syndtr/goleveldb/leveldb/util"
@@ -55,6 +77,10 @@ func lexDumpBool(v bool) []byte {
 
 func lexDumpInt(v int) []byte {
 	return lexDumpInt64(int64(v))
+}
+
+func lexDumpUint(v int) []byte {
+	return lexDumpUint64(uint64(v))
 }
 
 func lexDumpInt64(v int64) []byte {
@@ -102,6 +128,62 @@ func lexDumpUint64(v uint64) []byte {
 	default:
 		return []byte{IntMax, byte(v>>56), byte(v>>48), byte(v>>40), byte(v>>32), byte(v>>24), byte(v>>16), byte(v>>8), byte(v)}
 	}
+}
+
+func lexDumpInt8(v int8) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpInt16(v int16) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpInt32(v int32) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpUint8(v uint8) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpUint16(v int16) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpUint32(v int32) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpFloat32(v float32) []byte {
+	return lexDumpUint64(uint64(math.Float32bits(v)))
+}
+
+func lexDumpFloat64(v float64) []byte {
+	return lexDumpUint64(math.Float64bits(v))
+}
+
+func lexDumpByte(v byte) []byte {
+	return []byte{v}
+}
+
+func lexDumpRune(v rune) []byte {
+	return []byte{byte(v>>24), byte(v>>16), byte(v>>8), byte(v)}
+}
+
+func lexDumpBytes(v []byte) []byte {
+	return v
+}
+
+func lexDumpRunes(v []rune) []byte {
+	return []byte(string(v))
+}
+
+func lexDumpTime(v time.Time) []byte {
+	unix := v.Unix()
+	nano := int64(v.Nanosecond())
+	ret := lexDumpInt64(unix)
+	ret = append(ret, lexDumpInt64(nano)...)
+	return ret
 }
 
 func lexLoadInt(b []byte) (int, error) {
@@ -393,7 +475,7 @@ func (col *{{$structName}}Collection) All() *Iter{{$structName}} {
 {{range $indexName, $subType := (getIndex $structName)}}
 //{{$indexName}}Eq iterates trough {{$structName}} {{$indexName}} index with equal values
 func (col *{{$structName}}Collection) {{$indexName}}Eq(val {{$subType}}) *IterIndex{{$structName}} {
-	valDump := lexDump{{title $subType}}(val)
+	valDump := lexDump{{lexType $subType}}(val)
 	prefix := append([]byte("${{$structName}}/{{$indexName}}/"), valDump...)
 	return &IterIndex{{$structName}}{
 		Iter{{$structName}}{
@@ -408,8 +490,8 @@ func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit {{$subTyp
 	return &IterIndex{{$structName}}{
 		Iter{{$structName}}{
 			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{title $subType}}(start)...),
-				Limit: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{title $subType}}(limit)...),
+				Start: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{lexType $subType}}(start)...),
+				Limit: append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{lexType $subType}}(limit)...),
 			}, nil)},
 			col: col,
 		},
@@ -427,7 +509,7 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 	if obj == nil {
 		return nil
 	}
-	buf := bytes.NewBuffer(nil)
+	var buf bytes.Buffer
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
 		{{if hasIndex $attr.Type}}
@@ -451,14 +533,14 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 		{{end}}
 	{{else}}
 	    {{if ne $attr.Index ""}}
-			{{if (contains $attr.Type "[]")}}
+			{{if (contains $attr.Type "[]") and (ne $attr.Index "[]rune") and (ne $attr.Index "[]byte")}}
 				for _, attr := range obj.{{$attrName}} {
 					buf.Reset()
 					buf.Write(prefix)
 					buf.WriteRune('/')
 					buf.WriteString("{{$attr.Index}}")
 					buf.WriteRune('/')
-					buf.Write(lexDump{{title (replace $attr.Type "[]" "")}}(attr))
+					buf.Write(lexDump{{lexType (replace $attr.Type "[]" "")}}(attr))
 					buf.WriteRune('/')
 					buf.Write(lexDumpInt(id))
 					batch.Put(buf.Bytes(), nil)
@@ -469,7 +551,7 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 				buf.WriteRune('/')
 				buf.WriteString("{{$attr.Index}}")
 				buf.WriteRune('/')
-				buf.Write(lexDump{{title $attr.Type}}(obj.{{$attrName}}))
+				buf.Write(lexDump{{lexType $attr.Type}}(obj.{{$attrName}}))
 				buf.WriteRune('/')
 				buf.Write(lexDumpInt(id))
 				batch.Put(buf.Bytes(), nil)
@@ -497,6 +579,7 @@ func Parse(filename string) (*DBGenerator, error) {
 		return nil, fmt.Errorf("Error in parsing file %s: %s", filename, err)
 	}
 	gen := &DBGenerator{Structs: make(map[string]*Struct), PackageName: f.Name.Name}
+	ast.Print(fset, f)
 	ast.Inspect(f, func(node ast.Node) bool {
 		typ, ok := node.(*ast.GenDecl)
 		if !ok || typ.Tok != token.TYPE {
@@ -511,14 +594,14 @@ func Parse(filename string) (*DBGenerator, error) {
 			if !ok {
 				continue
 			}
-			parseStructType(gen, structSpec, structType)
+			parseStructType(gen, structSpec, structType, fset)
 		}
 		return true
 	})
 	return gen, nil
 }
 
-func parseStructType(gen *DBGenerator, structSpec *ast.TypeSpec, structType *ast.StructType) {
+func parseStructType(gen *DBGenerator, structSpec *ast.TypeSpec, structType *ast.StructType, fset *token.FileSet) {
 	s := &Struct{
 		Name:     structSpec.Name.Name,
 		Exported: ast.IsExported(structSpec.Name.Name),
@@ -532,7 +615,12 @@ func parseStructType(gen *DBGenerator, structSpec *ast.TypeSpec, structType *ast
 				if field.Tag.Value[:8] == "`index:\"" {
 					attr.Index = field.Tag.Value[8 : len(field.Tag.Value)-2]
 				} else {
-					fmt.Printf("WARNING: Field %s in struct %s has not valid tag (%s)", name.Name, structSpec.Name.Name, field.Tag.Value)
+					fmt.Printf("WARNING: Field %s in struct %s has not valid tag (%s) on line %d\n",
+						name.Name,
+						structSpec.Name.Name,
+						field.Tag.Value,
+						fset.File(field.Tag.Pos()).Line(field.Tag.Pos()),
+					)
 				}
 			}
 			switch typ := field.Type.(type) {
@@ -545,10 +633,32 @@ func parseStructType(gen *DBGenerator, structSpec *ast.TypeSpec, structType *ast
 				case *ast.Ident:
 					attr.Type = "[]" + expr.Name
 				case *ast.StarExpr:
-					attr.Type = "[]*" + expr.X.(*ast.Ident).Name
+					switch starIdent := expr.X.(type) {
+					case *ast.Ident:
+						attr.Type = "[]*" + starIdent.Name
+					default:
+						fmt.Printf("Error: Unknown pointer type %s at line %d\n", starIdent, fset.File(starIdent.Pos()).Line(starIdent.Pos()))
+						os.Exit(1)
+					}
 				default:
-					panic("Not known type")
+					fmt.Printf("Error: Unknown array type %s at line %d\n", expr, fset.File(expr.Pos()).Line(expr.Pos()))
+					os.Exit(1)
 				}
+			case *ast.SelectorExpr:
+				switch selectorIdent := typ.X.(type) {
+				case *ast.Ident:
+					attr.Type = fmt.Sprintf("%s.%s", selectorIdent.Name, typ.Sel.Name)
+				default:
+					fmt.Printf("Error: Unknown array type %s at line %d\n", selectorIdent, fset.File(selectorIdent.Pos()).Line(selectorIdent.Pos()))
+					os.Exit(1)
+				}
+			default:
+				fmt.Printf("Error: Unknown type %#v at line %d\n", typ, fset.File(typ.Pos()).Line(typ.Pos()))
+				os.Exit(1)
+			}
+			if attr.Index != "" && !attr.IsIndexable() {
+				fmt.Printf("Error: Type %s is not indexable at line %d\n", attr.Type, fset.File(field.Pos()).Line(field.Pos()))
+				os.Exit(1)
 			}
 			s.Attrs[name.Name] = attr
 		}
@@ -557,7 +667,7 @@ func parseStructType(gen *DBGenerator, structSpec *ast.TypeSpec, structType *ast
 
 func (gen *DBGenerator) String() string {
 	var buf bytes.Buffer
-	buf.WriteString("DBGenerator {\n")
+	buf.WriteString("Mímir {\n")
 	for structName, s := range gen.Structs {
 		buf.WriteString(fmt.Sprintf("\t%s: {\n\t\tExported: %t\n", structName, s.Exported))
 		for attrName, attr := range s.Attrs {
@@ -620,8 +730,8 @@ func (gen DBGenerator) Generate(w io.Writer) error {
 		"contains":   strings.Contains,
 		"hasIndex":   gen.hasIndex,
 		"getIndex":   gen.getIndex,
-		"title":      strings.Title,
 		"isExported": ast.IsExported,
+		"lexType":    lexType,
 	}
 	buf := bytes.NewBuffer(nil)
 	temp, err := template.New("").Funcs(funcMap).Parse(DBTEMPLATE)
@@ -651,4 +761,10 @@ type Struct struct {
 type Attr struct {
 	Type  string
 	Index string
+}
+
+//IsIndexable returns true if the attribute type has suporting lexDump
+func (attr *Attr) IsIndexable() bool {
+	_, ok := INDEXABLE[attr.Type]
+	return ok
 }

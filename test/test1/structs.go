@@ -4,12 +4,16 @@
 
 package main
 
+import "time"
+
 //Person ...
 type Person struct {
 	Name, Lastname string
 	Age            int `index:"Age"`
 	Addresses      []*address
 	Degree         degree
+	BirthDate      time.Time `index:"Birth"`
+	ContractFile   []byte    `index:"Contract"`
 }
 
 type address struct {

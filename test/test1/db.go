@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -35,6 +36,10 @@ func lexDumpBool(v bool) []byte {
 
 func lexDumpInt(v int) []byte {
 	return lexDumpInt64(int64(v))
+}
+
+func lexDumpUint(v int) []byte {
+	return lexDumpUint64(uint64(v))
 }
 
 func lexDumpInt64(v int64) []byte {
@@ -82,6 +87,62 @@ func lexDumpUint64(v uint64) []byte {
 	default:
 		return []byte{IntMax, byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32), byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
 	}
+}
+
+func lexDumpInt8(v int8) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpInt16(v int16) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpInt32(v int32) []byte {
+	return lexDumpInt64(int64(v))
+}
+
+func lexDumpUint8(v uint8) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpUint16(v int16) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpUint32(v int32) []byte {
+	return lexDumpUint64(uint64(v))
+}
+
+func lexDumpFloat32(v float32) []byte {
+	return lexDumpUint64(uint64(math.Float32bits(v)))
+}
+
+func lexDumpFloat64(v float64) []byte {
+	return lexDumpUint64(math.Float64bits(v))
+}
+
+func lexDumpByte(v byte) []byte {
+	return []byte{v}
+}
+
+func lexDumpRune(v rune) []byte {
+	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+}
+
+func lexDumpBytes(v []byte) []byte {
+	return v
+}
+
+func lexDumpRunes(v []rune) []byte {
+	return []byte(string(v))
+}
+
+func lexDumpTime(v time.Time) []byte {
+	unix := v.Unix()
+	nano := int64(v.Nanosecond())
+	ret := lexDumpInt64(unix)
+	ret = append(ret, lexDumpInt64(nano)...)
+	return ret
 }
 
 func lexLoadInt(b []byte) (int, error) {
@@ -153,8 +214,6 @@ type DB struct {
 	decode Decode
 
 	Persons *PersonCollection
-
-	Posts *PostCollection
 }
 
 //OpenDB opens the database
@@ -166,8 +225,6 @@ func OpenDB(path string, encode Encode, decode Decode) (*DB, error) {
 	db := &DB{db: ldb, encode: encode, decode: decode}
 
 	db.Persons = &PersonCollection{db: db}
-
-	db.Posts = &PostCollection{db: db}
 
 	return db, nil
 }
@@ -422,12 +479,62 @@ func (col *PersonCollection) AgeRange(start, limit int) *IterIndexPerson {
 	}
 }
 
+//BirthEq iterates trough Person Birth index with equal values
+func (col *PersonCollection) BirthEq(val time.Time) *IterIndexPerson {
+	valDump := lexDumpTime(val)
+	prefix := append([]byte("$Person/Birth/"), valDump...)
+	return &IterIndexPerson{
+		IterPerson{
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
+			col:  col,
+		},
+	}
+}
+
+//BirthRange iterates trough Person Birth index in the specified range
+func (col *PersonCollection) BirthRange(start, limit time.Time) *IterIndexPerson {
+	return &IterIndexPerson{
+		IterPerson{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
+				Start: append([]byte("$Person/Birth/"), lexDumpTime(start)...),
+				Limit: append([]byte("$Person/Birth/"), lexDumpTime(limit)...),
+			}, nil)},
+			col: col,
+		},
+	}
+}
+
+//ContractEq iterates trough Person Contract index with equal values
+func (col *PersonCollection) ContractEq(val []byte) *IterIndexPerson {
+	valDump := lexDumpBytes(val)
+	prefix := append([]byte("$Person/Contract/"), valDump...)
+	return &IterIndexPerson{
+		IterPerson{
+			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
+			col:  col,
+		},
+	}
+}
+
+//ContractRange iterates trough Person Contract index in the specified range
+func (col *PersonCollection) ContractRange(start, limit []byte) *IterIndexPerson {
+	return &IterIndexPerson{
+		IterPerson{
+			Iter: &Iter{col.db.db.NewIterator(&util.Range{
+				Start: append([]byte("$Person/Contract/"), lexDumpBytes(start)...),
+				Limit: append([]byte("$Person/Contract/"), lexDumpBytes(limit)...),
+			}, nil)},
+			col: col,
+		},
+	}
+}
+
 func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id int, obj *Person) (err error) {
 
 	if obj == nil {
 		return nil
 	}
-	buf := bytes.NewBuffer(nil)
+	var buf bytes.Buffer
 
 	for _, attr := range obj.Addresses {
 
@@ -448,216 +555,27 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	buf.Write(lexDumpInt(id))
 	batch.Put(buf.Bytes(), nil)
 
-	return nil
-}
-
-//PostCollection represents the collection of Posts
-type PostCollection struct {
-	db *DB
-}
-
-//IterPost iterates trough all Post in db
-type IterPost struct {
-	*Iter
-	col *PostCollection
-}
-
-//Value returns the Post on witch is the iterator
-func (it *IterPost) Value() (*Post, error) {
-	data := it.it.Value()
-	var obj Post
-	err := it.col.db.decode(data, &obj)
-	if err != nil {
-		return nil, err
-	}
-	return &obj, nil
-}
-
-//IterIndexPost iterates trough an index for Post in db
-type IterIndexPost struct {
-	IterPost
-}
-
-//Value returns the Post on witch is the iterator
-func (it *IterIndexPost) Value() (*Post, error) {
-	key := it.it.Key()
-	index := bytes.LastIndexByte(key, '/')
-	if index == -1 {
-		return nil, fmt.Errorf("Index for Post has bad encoding")
-	}
-	id, err := lexLoadInt(key[index+1:])
-	if err != nil {
-		return nil, err
-	}
-	obj, err := it.col.Get(id)
-	if err != nil {
-		return nil, err
-	}
-	return obj, nil
-}
-
-func prefixPost(id int) []byte {
-	buf := bytes.NewBuffer([]byte("Post"))
-	buf.WriteRune('/')
-	buf.Write(lexDumpInt(id))
-	return buf.Bytes()
-}
-
-//Get returns Post with specified id or an error
-func (col *PostCollection) Get(id int) (*Post, error) {
-	data, err := col.db.db.Get(prefixPost(id), nil)
-	if err != nil {
-		return nil, err
-	}
-	var obj Post
-	err = col.db.decode(data, &obj)
-	if err != nil {
-		return nil, err
-	}
-	return &obj, nil
-}
-
-//Add inserts new Post to the db
-func (col *PostCollection) Add(obj *Post) (int, error) {
-	data, err := col.db.encode(&obj)
-	if err != nil {
-		return 0, err
-	}
-	batch := new(leveldb.Batch)
-	id := rand.Int()
-	batch.Put(prefixPost(id), data)
-	err = col.addIndex([]byte("$Post"), batch, id, obj)
-	if err != nil {
-		return 0, err
-	}
-	err = col.db.db.Write(batch, nil)
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
-}
-
-//Update updates Post with specified id
-func (col *PostCollection) Update(id int, obj *Post) error {
-	key := prefixPost(id)
-	_, err := col.db.db.Get(key, nil)
-	if err != nil {
-		return fmt.Errorf("Post with id (%d) doesn't exist: %s", id, err)
-	}
-	data, err := col.db.encode(&obj)
-	if err != nil {
-		return err
-	}
-	batch := new(leveldb.Batch)
-	batch.Put(key, data)
-	err = col.removeIndex(batch, id)
-	if err != nil {
-		return err
-	}
-	err = col.addIndex([]byte("$Post"), batch, id, obj)
-	if err != nil {
-		return err
-	}
-	err = col.db.db.Write(batch, nil)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-//Delete remoces Post from the db with specified id
-func (col *PostCollection) Delete(id int) error {
-	key := prefixPost(id)
-	_, err := col.db.db.Get(key, nil)
-	if err != nil {
-		return fmt.Errorf("Post with id (%d) doesn't exist: %s", id, err)
-	}
-	batch := new(leveldb.Batch)
-	batch.Delete(key)
-	err = col.removeIndex(batch, id)
-	if err != nil {
-		return err
-	}
-	err = col.db.db.Write(batch, nil)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-//removeIndex TODO this doesn't have to iterate trough the whole collection
-func (col *PostCollection) removeIndex(batch *leveldb.Batch, id int) error {
-	iter := col.db.db.NewIterator(util.BytesPrefix([]byte("$Post")), nil)
-	for iter.Next() {
-		key := iter.Key()
-		index := bytes.LastIndexByte(key, '/')
-		if index == -1 {
-			return fmt.Errorf("Index for Post has bad encoding")
-		}
-		objID, err := lexLoadInt(key[index+1:])
-		if err != nil {
-			return err
-		}
-		if err != nil {
-			return err
-		}
-		if id == objID {
-			batch.Delete(key)
-		}
-	}
-	iter.Release()
-	return iter.Error()
-}
-
-//All returns an iterator witch iterates trough all Posts
-func (col *PostCollection) All() *IterPost {
-	return &IterPost{
-		Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix([]byte("Post")), nil)},
-		col:  col,
-	}
-}
-
-//PIDEq iterates trough Post PID index with equal values
-func (col *PostCollection) PIDEq(val int) *IterIndexPost {
-	valDump := lexDumpInt(val)
-	prefix := append([]byte("$Post/PID/"), valDump...)
-	return &IterIndexPost{
-		IterPost{
-			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
-			col:  col,
-		},
-	}
-}
-
-//PIDRange iterates trough Post PID index in the specified range
-func (col *PostCollection) PIDRange(start, limit int) *IterIndexPost {
-	return &IterIndexPost{
-		IterPost{
-			Iter: &Iter{col.db.db.NewIterator(&util.Range{
-				Start: append([]byte("$Post/PID/"), lexDumpInt(start)...),
-				Limit: append([]byte("$Post/PID/"), lexDumpInt(limit)...),
-			}, nil)},
-			col: col,
-		},
-	}
-}
-
-func (col *PostCollection) addIndex(prefix []byte, batch *leveldb.Batch, id int, obj *Post) (err error) {
-
-	if obj == nil {
-		return nil
-	}
-	buf := bytes.NewBuffer(nil)
-
 	buf.Reset()
 	buf.Write(prefix)
 	buf.WriteRune('/')
-	buf.WriteString("PID")
+	buf.WriteString("Birth")
 	buf.WriteRune('/')
-	buf.Write(lexDumpInt(obj.PersonID))
+	buf.Write(lexDumpTime(obj.BirthDate))
 	buf.WriteRune('/')
 	buf.Write(lexDumpInt(id))
 	batch.Put(buf.Bytes(), nil)
+
+	for _, attr := range obj.ContractFile {
+		buf.Reset()
+		buf.Write(prefix)
+		buf.WriteRune('/')
+		buf.WriteString("Contract")
+		buf.WriteRune('/')
+		buf.Write(lexDumpByte(attr))
+		buf.WriteRune('/')
+		buf.Write(lexDumpInt(id))
+		batch.Put(buf.Bytes(), nil)
+	}
 
 	return nil
 }
@@ -667,7 +585,7 @@ func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *
 	if obj == nil {
 		return nil
 	}
-	buf := bytes.NewBuffer(nil)
+	var buf bytes.Buffer
 
 	buf.Reset()
 	buf.Write(prefix)

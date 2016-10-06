@@ -11,6 +11,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 )
 
 const DBPATH = "/home/micro/meh"
@@ -207,7 +208,6 @@ func TestIter(t *testing.T) {
 	}
 
 	iterIndex := db.Persons.AddressCityRange("0", "ZZZZZZZZZZ")
-	defer iterIndex.Release()
 	i := 0
 	indices := []int{0, 1, 2, 2}
 	for iterIndex.Next() {
@@ -223,12 +223,27 @@ func TestIter(t *testing.T) {
 		}
 		i++
 	}
+	iterIndex.Release()
 	if i == 0 {
 		t.Error("No iteration in IterAddressCityRange")
 	}
 	if i != 4 {
 		t.Error("IterAddressCityRange not iterated trough all indices")
 	}
+
+	i = 0
+	iterIndex = db.Persons.BirthEq(time.Time{})
+	for iterIndex.Next() {
+		_, err := iterIndex.Value()
+		if err != nil {
+			t.Error(err)
+		}
+		i++
+	}
+	if i != 3 {
+		t.Errorf("BirthEq iter iterated %d times and not 3", i)
+	}
+	iterIndex.Release()
 }
 
 var personObj = &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
