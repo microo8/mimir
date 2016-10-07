@@ -192,22 +192,16 @@ func lexDumpTime(v time.Time) []byte {
 }
 
 func lexLoadInt(b []byte) (int, error) {
-	fmt.Println("lexLoadInt len(b)=", len(b))
 	if len(b) == 0 {
 		return 0, fmt.Errorf("insufficient bytes to decode uvarint value")
 	}
-	fmt.Println(1, b)
 	length := int(b[0]) - intZero
-	fmt.Println(2, b)
 	if length < 0 {
 		length = -length
-	fmt.Println(3, b)
 		remB := b[1:]
-	fmt.Println(4, b)
 		if len(remB) < length {
 			return 0, fmt.Errorf("insufficient bytes to decode uvarint value: %s", remB)
 		}
-	fmt.Println(5, b)
 		var v int
 		// Use the ones-complement of each encoded byte in order to build
 		// up a positive number, then take the ones-complement again to
@@ -215,20 +209,16 @@ func lexLoadInt(b []byte) (int, error) {
 		for _, t := range remB[:length] {
 			v = (v << 8) | int(^t)
 		}
-	fmt.Println(6, b)
 		return ^v, nil
 	}
 
-	fmt.Println(7, b)
 	v, err := lexLoadUint(b)
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println(8, b)
 	if v > math.MaxInt64 {
 		return 0, fmt.Errorf("varint %d overflows int64", v)
 	}
-	fmt.Println(9, b)
 	return int(v), nil
 }
 
@@ -288,21 +278,6 @@ type Iter struct {
 	it iterator.Iterator
 }
 
-//ID returns id of object
-func (it *Iter) ID() int {
-	key := it.it.Key()
-	index := bytes.LastIndexByte(key, '/')
-	if index == -1 {
-		return 0
-	}
-	fmt.Println("ID", index, len(key))
-	objID, err := lexLoadInt(key[index+1:])
-	if err != nil {
-		return 0
-	}
-	return objID
-}
-
 //Next sets the iterator to the next object, or returns false
 func (it *Iter) Next() bool {
 	return it.it.Next()
@@ -326,6 +301,16 @@ type Iter{{$structName}} struct {
 	col *{{$structName}}Collection
 }
 
+//ID returns id of current {{$structName}}
+func (it *Iter{{$structName}}) ID() int {
+	key := it.it.Key()
+	objID, err := lexLoadInt(key[{{add (len $structName) 1}}:])
+	if err != nil {
+		return 0
+	}
+	return objID
+}
+
 //Value returns the {{$structName}} on witch is the iterator
 func (it *Iter{{$structName}}) Value() (*{{$structName}}, error) {
 	data := it.it.Value()
@@ -340,25 +325,43 @@ func (it *Iter{{$structName}}) Value() (*{{$structName}}, error) {
 //IterIndex{{$structName}} iterates trough an index for {{$structName}} in db
 type IterIndex{{$structName}} struct {
 	Iter{{$structName}}
+	indexNameLen int
+}
+
+//ID returns id of current {{$structName}}
+func (it *IterIndex{{$structName}}) ID() int {
+	key := it.it.Key()
+	subKey := key[it.indexNameLen+{{add (len $structName) 3}}:]
+	index := bytes.IndexByte(subKey, '/')
+	if index == -1 {
+		return 0
+	}
+	objID, err := lexLoadInt(subKey[index+1:])
+	if err != nil {
+		return 0
+	}
+	return objID
 }
 
 //Value returns the {{$structName}} on witch is the iterator
 func (it *IterIndex{{$structName}}) Value() (*{{$structName}}, error) {
 	key := it.it.Key()
-	index := bytes.LastIndexByte(key, '/')
+	subKey := key[it.indexNameLen+{{add (len $structName) 3}}:]
+	index := bytes.IndexByte(subKey, '/')
 	if index == -1 {
 		return nil, fmt.Errorf("Index for {{$structName}} has bad encoding")
 	}
-	fmt.Println("Value", index, len(key))
-	id, err := lexLoadInt(key[index+1:])
+	key = append([]byte("{{$structName}}/"), subKey[index+1:]...)
+	data, err := it.col.db.db.Get(key, nil)
 	if err != nil {
 		return nil, err
 	}
-	obj, err := it.col.Get(id)
+	var obj {{$structName}}
+	err = json.Unmarshal(data, &obj)
 	if err != nil {
 		return nil, err
 	}
-	return obj, nil
+	return &obj, nil
 }
 
 //Get returns {{$structName}} with specified id or an error
@@ -379,18 +382,11 @@ func (col *{{$structName}}Collection) Get(id int) (*{{$structName}}, error) {
 func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
     data, err := json.Marshal(obj)
     if err != nil {
-        return 0, err
+        return 0, fmt.Errorf("json encoding struct {{$structName}} error: %s", err)
     }
     batch := new(leveldb.Batch)
     id := rand.Int()
-	for id == 0 {
-    	id = rand.Int()
-	}
 	key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
-	_, err = col.db.db.Get(key, nil)
-	if err == nil {
-		return -1, fmt.Errorf("ID collision: {{$structName}} with id (%d) exists", id)
-	}
     batch.Put(key, data)
 	{{if hasIndex $structName}}
     err = col.addIndex([]byte("${{$structName}}/"), batch, id, obj)
@@ -408,21 +404,28 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
 //Update updates {{$structName}} with specified id
 func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error {
     key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
-    _, err := col.db.db.Get(key, nil)
+	{{if hasIndex $structName}}
+    oldObj, err := col.Get(id)
     if err != nil {
         return fmt.Errorf("{{$structName}} with id (%d) doesn't exist: %s", id, err)
     }
+	{{else}}
+	_, err := col.db.db.Get(key, nil)
+	if err != nil {
+		return nil
+	}
+	{{end}}
     data, err := json.Marshal(obj)
     if err != nil {
-        return err
+        return fmt.Errorf("json encoding struct {{$structName}} error: %s", err)
     }
     batch := new(leveldb.Batch)
     batch.Put(key, data)
-    err = col.removeIndex(batch, id)
+	{{if hasIndex $structName}}
+    err = col.removeIndex([]byte("${{$structName}}/"), batch, id, oldObj)
     if err != nil {
         return err
     }
-	{{if hasIndex $structName}}
     err = col.addIndex([]byte("${{$structName}}/"), batch, id, obj)
     if err != nil {
         return err
@@ -435,49 +438,33 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
     return nil
 }
 
-//Delete remoces {{$structName}} from the db with specified id
+//Delete removes {{$structName}} from the db with specified id
 func (col *{{$structName}}Collection) Delete(id int) error {
     key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
-    _, err := col.db.db.Get(key, nil)
+	{{if hasIndex $structName}}
+    oldObj, err := col.Get(id)
     if err != nil {
-        return fmt.Errorf("{{$structName}} with id (%d) doesn't exist: %s", id, err)
+        return nil
     }
+	{{else}}
+	_, err := col.db.db.Get(key, nil)
+	if err != nil {
+		return nil
+	}
+	{{end}}
     batch := new(leveldb.Batch)
 	batch.Delete(key)
-    err = col.removeIndex(batch, id)
+	{{if hasIndex $structName}}
+    err = col.removeIndex([]byte("${{$structName}}/"), batch, id, oldObj)
     if err != nil {
-        return err
+        return fmt.Errorf("Removing {{$structName}} error: %s", err)
     }
+	{{end}}
     err = col.db.db.Write(batch, nil)
     if err != nil {
         return err
     }
     return nil
-}
-
-//removeIndex TODO this doesn't have to iterate trough the whole collection
-func (col *{{$structName}}Collection) removeIndex(batch *leveldb.Batch, id int) error {
-    iter := col.db.db.NewIterator(util.BytesPrefix([]byte("${{$structName}}/")), nil)
-    for iter.Next() {
-		key := iter.Key()
-		index := bytes.LastIndexByte(key, '/')
-		if index == -1 {
-			return fmt.Errorf("Index for {{$structName}} has bad encoding")
-		}
-	    fmt.Println("removeIndex", index, len(key))
-		objID, err := lexLoadInt(key[index+1:])
-		if err != nil {
-			return fmt.Errorf("Index for {{$structName}} (key: %s) if decode err: %s", string(key[index+1:]), err)
-		}
-        if err != nil {
-            return err
-        }
-        if id == objID {
-            batch.Delete(key)
-        }
-    }
-    iter.Release()
-    return iter.Error()
 }
 
 //All returns an iterator witch iterates trough all {{$structName}}s
@@ -498,6 +485,7 @@ func (col *{{$structName}}Collection) {{$indexName}}Eq(val {{$subType}}) *IterIn
 			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
 			col: col,
 		},
+		{{len $indexName}},
 	}
 }
 
@@ -521,6 +509,7 @@ func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit *{{$subTy
 			}, nil)},
 			col: col,
 		},
+		{{len $indexName}},
 	}
 }
 {{end}}
@@ -544,7 +533,7 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 		{{if (contains $attr.Type "[]")}}
 			for _, attr := range obj.{{$attrName}} {
 				{{if isExported (replace (replace $attr.Type "[]" "") "*" "")}}
-				err = {{if $struct.Exported}}col.{{end}}db.{{replace (replace $attr.Type "[]" "") "*" ""}}s().addIndex(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				err = {{if $struct.Exported}}col.{{end}}db.{{replace (replace $attr.Type "[]" "") "*" ""}}s.addIndex(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
 				{{else}}
 				err = {{if $struct.Exported}}col.{{end}}db.add{{replace (replace $attr.Type "[]" "") "*" ""}}Index(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
 				{{end}}
@@ -553,7 +542,7 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 				}
 			}
     	{{else}}
-			err = db.{{replace $attr.Type "*" ""}}s().addIndex(prefix, batch, id, obj.{{$attrName}})
+			err = db.{{replace $attr.Type "*" ""}}s.addIndex(prefix, batch, id, obj.{{$attrName}})
 			if err != nil {
 				return err
 			}
@@ -579,6 +568,64 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 				buf.WriteRune('/')
 				buf.Write(idDump)
 				batch.Put(buf.Bytes(), nil)
+			{{end}}
+		{{end}}
+    {{end}}
+    {{end}}
+    return nil
+}
+
+{{if $struct.Exported}}
+func (col *{{$structName}}Collection) removeIndex(prefix []byte, batch *leveldb.Batch, id int, obj *{{$structName}}) (err error) {
+{{else}}
+func (db *DB) remove{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id int, obj *{{$structName}}) (err error) {
+{{end}}
+	if obj == nil {
+		return nil
+	}
+	var buf bytes.Buffer
+	idDump := lexDumpInt(id)
+    {{range $attrName, $attr := $struct.Attrs}}
+    {{if isStruct $attr.Type}}
+		{{if hasIndex $attr.Type}}
+		{{if (contains $attr.Type "[]")}}
+			for _, attr := range obj.{{$attrName}} {
+				{{if isExported (replace (replace $attr.Type "[]" "") "*" "")}}
+				err = {{if $struct.Exported}}col.{{end}}db.{{replace (replace $attr.Type "[]" "") "*" ""}}s.removeIndex(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				{{else}}
+				err = {{if $struct.Exported}}col.{{end}}db.remove{{replace (replace $attr.Type "[]" "") "*" ""}}Index(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				{{end}}
+				if err != nil {
+					return err
+				}
+			}
+    	{{else}}
+			err = db.{{replace $attr.Type "*" ""}}s.addIndex(prefix, batch, id, obj.{{$attrName}})
+			if err != nil {
+				return err
+			}
+		{{end}}
+		{{end}}
+	{{else}}
+	    {{if ne $attr.Index ""}}
+			{{if (contains $attr.Type "[]") and (ne $attr.Index "[]rune") and (ne $attr.Index "[]byte")}}
+				for _, attr := range obj.{{$attrName}} {
+					buf.Reset()
+					buf.Write(prefix)
+					buf.WriteString("{{$attr.Index}}/")
+					buf.Write(lexDump{{lexType (replace $attr.Type "[]" "")}}(attr))
+					buf.WriteRune('/')
+					buf.Write(idDump)
+					batch.Delete(buf.Bytes())
+				}
+			{{else}}
+				buf.Reset()
+				buf.Write(prefix)
+				buf.WriteString("{{$attr.Index}}/")
+				buf.Write(lexDump{{lexType $attr.Type}}(obj.{{$attrName}}))
+				buf.WriteRune('/')
+				buf.Write(idDump)
+				batch.Delete(buf.Bytes())
 			{{end}}
 		{{end}}
     {{end}}
@@ -763,7 +810,7 @@ func (gen DBGenerator) Generate(w io.Writer) error {
 		"getIndex":   gen.getIndex,
 		"isExported": ast.IsExported,
 		"lexType":    lexType,
-		"print":      func(args ...interface{}) string { fmt.Println(args...); return "" },
+		"add":        func(a, b int) int { return a + b },
 	}
 	buf := bytes.NewBuffer(nil)
 	temp, err := template.New("").Funcs(funcMap).Parse(DBTEMPLATE)

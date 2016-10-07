@@ -151,22 +151,16 @@ func lexDumpTime(v time.Time) []byte {
 }
 
 func lexLoadInt(b []byte) (int, error) {
-	fmt.Println("lexLoadInt len(b)=", len(b))
 	if len(b) == 0 {
 		return 0, fmt.Errorf("insufficient bytes to decode uvarint value")
 	}
-	fmt.Println(1, b)
 	length := int(b[0]) - intZero
-	fmt.Println(2, b)
 	if length < 0 {
 		length = -length
-		fmt.Println(3, b)
 		remB := b[1:]
-		fmt.Println(4, b)
 		if len(remB) < length {
 			return 0, fmt.Errorf("insufficient bytes to decode uvarint value: %s", remB)
 		}
-		fmt.Println(5, b)
 		var v int
 		// Use the ones-complement of each encoded byte in order to build
 		// up a positive number, then take the ones-complement again to
@@ -174,20 +168,16 @@ func lexLoadInt(b []byte) (int, error) {
 		for _, t := range remB[:length] {
 			v = (v << 8) | int(^t)
 		}
-		fmt.Println(6, b)
 		return ^v, nil
 	}
 
-	fmt.Println(7, b)
 	v, err := lexLoadUint(b)
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println(8, b)
 	if v > math.MaxInt64 {
 		return 0, fmt.Errorf("varint %d overflows int64", v)
 	}
-	fmt.Println(9, b)
 	return int(v), nil
 }
 
@@ -246,21 +236,6 @@ type Iter struct {
 	it iterator.Iterator
 }
 
-//ID returns id of object
-func (it *Iter) ID() int {
-	key := it.it.Key()
-	index := bytes.LastIndexByte(key, '/')
-	if index == -1 {
-		return 0
-	}
-	fmt.Println("ID", index, len(key))
-	objID, err := lexLoadInt(key[index+1:])
-	if err != nil {
-		return 0
-	}
-	return objID
-}
-
 //Next sets the iterator to the next object, or returns false
 func (it *Iter) Next() bool {
 	return it.it.Next()
@@ -282,6 +257,16 @@ type IterPerson struct {
 	col *PersonCollection
 }
 
+//ID returns id of current Person
+func (it *IterPerson) ID() int {
+	key := it.it.Key()
+	objID, err := lexLoadInt(key[7:])
+	if err != nil {
+		return 0
+	}
+	return objID
+}
+
 //Value returns the Person on witch is the iterator
 func (it *IterPerson) Value() (*Person, error) {
 	data := it.it.Value()
@@ -296,25 +281,43 @@ func (it *IterPerson) Value() (*Person, error) {
 //IterIndexPerson iterates trough an index for Person in db
 type IterIndexPerson struct {
 	IterPerson
+	indexNameLen int
+}
+
+//ID returns id of current Person
+func (it *IterIndexPerson) ID() int {
+	key := it.it.Key()
+	subKey := key[it.indexNameLen+9:]
+	index := bytes.IndexByte(subKey, '/')
+	if index == -1 {
+		return 0
+	}
+	objID, err := lexLoadInt(subKey[index+1:])
+	if err != nil {
+		return 0
+	}
+	return objID
 }
 
 //Value returns the Person on witch is the iterator
 func (it *IterIndexPerson) Value() (*Person, error) {
 	key := it.it.Key()
-	index := bytes.LastIndexByte(key, '/')
+	subKey := key[it.indexNameLen+9:]
+	index := bytes.IndexByte(subKey, '/')
 	if index == -1 {
 		return nil, fmt.Errorf("Index for Person has bad encoding")
 	}
-	fmt.Println("Value", index, len(key))
-	id, err := lexLoadInt(key[index+1:])
+	key = append([]byte("Person/"), subKey[index+1:]...)
+	data, err := it.col.db.db.Get(key, nil)
 	if err != nil {
 		return nil, err
 	}
-	obj, err := it.col.Get(id)
+	var obj Person
+	err = json.Unmarshal(data, &obj)
 	if err != nil {
 		return nil, err
 	}
-	return obj, nil
+	return &obj, nil
 }
 
 //Get returns Person with specified id or an error
@@ -335,18 +338,11 @@ func (col *PersonCollection) Get(id int) (*Person, error) {
 func (col *PersonCollection) Add(obj *Person) (int, error) {
 	data, err := json.Marshal(obj)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("json encoding struct Person error: %s", err)
 	}
 	batch := new(leveldb.Batch)
 	id := rand.Int()
-	for id == 0 {
-		id = rand.Int()
-	}
 	key := append([]byte("Person/"), lexDumpInt(id)...)
-	_, err = col.db.db.Get(key, nil)
-	if err == nil {
-		return -1, fmt.Errorf("ID collision: Person with id (%d) exists", id)
-	}
 	batch.Put(key, data)
 
 	err = col.addIndex([]byte("$Person/"), batch, id, obj)
@@ -364,21 +360,23 @@ func (col *PersonCollection) Add(obj *Person) (int, error) {
 //Update updates Person with specified id
 func (col *PersonCollection) Update(id int, obj *Person) error {
 	key := append([]byte("Person/"), lexDumpInt(id)...)
-	_, err := col.db.db.Get(key, nil)
+
+	oldObj, err := col.Get(id)
 	if err != nil {
 		return fmt.Errorf("Person with id (%d) doesn't exist: %s", id, err)
 	}
+
 	data, err := json.Marshal(obj)
 	if err != nil {
-		return err
+		return fmt.Errorf("json encoding struct Person error: %s", err)
 	}
 	batch := new(leveldb.Batch)
 	batch.Put(key, data)
-	err = col.removeIndex(batch, id)
+
+	err = col.removeIndex([]byte("$Person/"), batch, id, oldObj)
 	if err != nil {
 		return err
 	}
-
 	err = col.addIndex([]byte("$Person/"), batch, id, obj)
 	if err != nil {
 		return err
@@ -391,49 +389,28 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 	return nil
 }
 
-//Delete remoces Person from the db with specified id
+//Delete removes Person from the db with specified id
 func (col *PersonCollection) Delete(id int) error {
 	key := append([]byte("Person/"), lexDumpInt(id)...)
-	_, err := col.db.db.Get(key, nil)
+
+	oldObj, err := col.Get(id)
 	if err != nil {
-		return fmt.Errorf("Person with id (%d) doesn't exist: %s", id, err)
+		return nil
 	}
+
 	batch := new(leveldb.Batch)
 	batch.Delete(key)
-	err = col.removeIndex(batch, id)
+
+	err = col.removeIndex([]byte("$Person/"), batch, id, oldObj)
 	if err != nil {
-		return err
+		return fmt.Errorf("Removing Person error: %s", err)
 	}
+
 	err = col.db.db.Write(batch, nil)
 	if err != nil {
 		return err
 	}
 	return nil
-}
-
-//removeIndex TODO this doesn't have to iterate trough the whole collection
-func (col *PersonCollection) removeIndex(batch *leveldb.Batch, id int) error {
-	iter := col.db.db.NewIterator(util.BytesPrefix([]byte("$Person/")), nil)
-	for iter.Next() {
-		key := iter.Key()
-		index := bytes.LastIndexByte(key, '/')
-		if index == -1 {
-			return fmt.Errorf("Index for Person has bad encoding")
-		}
-		fmt.Println("removeIndex", index, len(key))
-		objID, err := lexLoadInt(key[index+1:])
-		if err != nil {
-			return fmt.Errorf("Index for Person (key: %s) if decode err: %s", string(key[index+1:]), err)
-		}
-		if err != nil {
-			return err
-		}
-		if id == objID {
-			batch.Delete(key)
-		}
-	}
-	iter.Release()
-	return iter.Error()
 }
 
 //All returns an iterator witch iterates trough all Persons
@@ -453,6 +430,7 @@ func (col *PersonCollection) AddressCityEq(val string) *IterIndexPerson {
 			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
 			col:  col,
 		},
+		11,
 	}
 }
 
@@ -476,6 +454,7 @@ func (col *PersonCollection) AddressCityRange(start, limit *string) *IterIndexPe
 			}, nil)},
 			col: col,
 		},
+		11,
 	}
 }
 
@@ -488,6 +467,7 @@ func (col *PersonCollection) AgeEq(val int) *IterIndexPerson {
 			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
 			col:  col,
 		},
+		3,
 	}
 }
 
@@ -511,6 +491,7 @@ func (col *PersonCollection) AgeRange(start, limit *int) *IterIndexPerson {
 			}, nil)},
 			col: col,
 		},
+		3,
 	}
 }
 
@@ -523,6 +504,7 @@ func (col *PersonCollection) BirthEq(val time.Time) *IterIndexPerson {
 			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
 			col:  col,
 		},
+		5,
 	}
 }
 
@@ -546,6 +528,7 @@ func (col *PersonCollection) BirthRange(start, limit *time.Time) *IterIndexPerso
 			}, nil)},
 			col: col,
 		},
+		5,
 	}
 }
 
@@ -558,6 +541,7 @@ func (col *PersonCollection) ContractEq(val []byte) *IterIndexPerson {
 			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
 			col:  col,
 		},
+		8,
 	}
 }
 
@@ -581,6 +565,7 @@ func (col *PersonCollection) ContractRange(start, limit *[]byte) *IterIndexPerso
 			}, nil)},
 			col: col,
 		},
+		8,
 	}
 }
 
@@ -631,6 +616,52 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	return nil
 }
 
+func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, id int, obj *Person) (err error) {
+
+	if obj == nil {
+		return nil
+	}
+	var buf bytes.Buffer
+	idDump := lexDumpInt(id)
+
+	for _, attr := range obj.Addresses {
+
+		err = col.db.removeaddressIndex(prefix, batch, id, attr)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	buf.Reset()
+	buf.Write(prefix)
+	buf.WriteString("Age/")
+	buf.Write(lexDumpInt(obj.Age))
+	buf.WriteRune('/')
+	buf.Write(idDump)
+	batch.Delete(buf.Bytes())
+
+	buf.Reset()
+	buf.Write(prefix)
+	buf.WriteString("Birth/")
+	buf.Write(lexDumpTime(obj.BirthDate))
+	buf.WriteRune('/')
+	buf.Write(idDump)
+	batch.Delete(buf.Bytes())
+
+	for _, attr := range obj.ContractFile {
+		buf.Reset()
+		buf.Write(prefix)
+		buf.WriteString("Contract/")
+		buf.Write(lexDumpByte(attr))
+		buf.WriteRune('/')
+		buf.Write(idDump)
+		batch.Delete(buf.Bytes())
+	}
+
+	return nil
+}
+
 func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *address) (err error) {
 
 	if obj == nil {
@@ -647,6 +678,25 @@ func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *
 	buf.WriteRune('/')
 	buf.Write(idDump)
 	batch.Put(buf.Bytes(), nil)
+
+	return nil
+}
+
+func (db *DB) removeaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *address) (err error) {
+
+	if obj == nil {
+		return nil
+	}
+	var buf bytes.Buffer
+	idDump := lexDumpInt(id)
+
+	buf.Reset()
+	buf.Write(prefix)
+	buf.WriteString("AddressCity/")
+	buf.Write(lexDumpString(obj.City))
+	buf.WriteRune('/')
+	buf.Write(idDump)
+	batch.Delete(buf.Bytes())
 
 	return nil
 }
