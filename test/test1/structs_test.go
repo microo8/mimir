@@ -57,6 +57,36 @@ func TestAddGet(t *testing.T) {
 	}
 }
 
+func TestAddUpdate(t *testing.T) {
+	os.RemoveAll(DBPATH)
+	db, err := OpenDB(DBPATH)
+	if err != nil {
+		t.Error(err)
+	}
+	defer db.Close()
+
+	p := &Person{Name: "a", Lastname: "b", Age: 34}
+	id, err := db.Persons.Add(p)
+	if err != nil {
+		t.Error(err)
+	}
+	if id == 0 {
+		t.Fatal("id is zero")
+	}
+	p.Name = "c"
+	err = db.Persons.Update(id, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = db.Persons.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Name != "c" || p.Lastname != "b" || p.Age != 34 {
+		t.Error("getted person is not equal to the included")
+	}
+}
+
 func TestAddDelete(t *testing.T) {
 	os.RemoveAll(DBPATH)
 	db, err := OpenDB(DBPATH)
@@ -75,7 +105,7 @@ func TestAddDelete(t *testing.T) {
 	}
 	err = persons.Delete(id)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	_, err = persons.Get(id)
 	if err == nil {
@@ -168,7 +198,7 @@ func TestIter(t *testing.T) {
 			t.Fatal(err)
 		}
 		if iter.ID() == 0 {
-			t.Error("IterPersonAll id is 0")
+			t.Fatal("IterPersonAll id is 0")
 		}
 		num++
 	}
@@ -253,3 +283,45 @@ var personObj = &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses
 	&address{Street: "Bla", Number: 666, City: "Hell"},
 	&address{Street: "Bla", Number: 666, City: "Hell"},
 }}
+
+func BenchmarkInsertGet(b *testing.B) {
+	os.RemoveAll(DBPATH)
+	db, err := OpenDB(DBPATH)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer db.Close()
+	for i := 0; i < b.N; i++ {
+		id, err := db.Persons.Add(personObj)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = db.Persons.Get(id)
+		if err != nil {
+			b.Errorf("Getting person error: %s", err)
+		}
+	}
+}
+
+func BenchmarkInsertGetUpdate(b *testing.B) {
+	os.RemoveAll(DBPATH)
+	db, err := OpenDB(DBPATH)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer db.Close()
+	for i := 0; i < b.N; i++ {
+		id, err := db.Persons.Add(personObj)
+		if err != nil {
+			b.Fatal(err)
+		}
+		p, err := db.Persons.Get(id)
+		if err != nil {
+			b.Errorf("Getting person error: %s", err)
+		}
+		err = db.Persons.Update(id, p)
+		if err != nil {
+			b.Errorf("Update person error: %s", err)
+		}
+	}
+}

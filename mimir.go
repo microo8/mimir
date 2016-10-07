@@ -192,16 +192,22 @@ func lexDumpTime(v time.Time) []byte {
 }
 
 func lexLoadInt(b []byte) (int, error) {
+	fmt.Println("lexLoadInt len(b)=", len(b))
 	if len(b) == 0 {
 		return 0, fmt.Errorf("insufficient bytes to decode uvarint value")
 	}
+	fmt.Println(1, b)
 	length := int(b[0]) - intZero
+	fmt.Println(2, b)
 	if length < 0 {
 		length = -length
+	fmt.Println(3, b)
 		remB := b[1:]
+	fmt.Println(4, b)
 		if len(remB) < length {
 			return 0, fmt.Errorf("insufficient bytes to decode uvarint value: %s", remB)
 		}
+	fmt.Println(5, b)
 		var v int
 		// Use the ones-complement of each encoded byte in order to build
 		// up a positive number, then take the ones-complement again to
@@ -209,25 +215,29 @@ func lexLoadInt(b []byte) (int, error) {
 		for _, t := range remB[:length] {
 			v = (v << 8) | int(^t)
 		}
+	fmt.Println(6, b)
 		return ^v, nil
 	}
 
+	fmt.Println(7, b)
 	v, err := lexLoadUint(b)
 	if err != nil {
 		return 0, err
 	}
+	fmt.Println(8, b)
 	if v > math.MaxInt64 {
 		return 0, fmt.Errorf("varint %d overflows int64", v)
 	}
+	fmt.Println(9, b)
 	return int(v), nil
 }
 
-func lexLoadUint(b []byte) (uint, error) {
-	if len(b) == 0 {
+func lexLoadUint(bytes []byte) (uint, error) {
+	if len(bytes) == 0 {
 		return 0, fmt.Errorf("insufficient bytes to decode uvarint value")
 	}
-	length := int(b[0]) - intZero
-	b = b[1:] // skip length byte
+	length := int(bytes[0]) - intZero
+	b := bytes[1:] // skip length byte
 	if length <= intSmall {
 		return uint(length), nil
 	}
@@ -285,6 +295,7 @@ func (it *Iter) ID() int {
 	if index == -1 {
 		return 0
 	}
+	fmt.Println("ID", index, len(key))
 	objID, err := lexLoadInt(key[index+1:])
 	if err != nil {
 		return 0
@@ -338,6 +349,7 @@ func (it *IterIndex{{$structName}}) Value() (*{{$structName}}, error) {
 	if index == -1 {
 		return nil, fmt.Errorf("Index for {{$structName}} has bad encoding")
 	}
+	fmt.Println("Value", index, len(key))
 	id, err := lexLoadInt(key[index+1:])
 	if err != nil {
 		return nil, err
@@ -349,16 +361,9 @@ func (it *IterIndex{{$structName}}) Value() (*{{$structName}}, error) {
 	return obj, nil
 }
 
-func prefix{{$structName}}(id int) []byte {
-	buf := bytes.NewBuffer([]byte("{{$structName}}"))
-	buf.WriteRune('/')
-	buf.Write(lexDumpInt(id))
-    return buf.Bytes()
-}
-
 //Get returns {{$structName}} with specified id or an error
 func (col *{{$structName}}Collection) Get(id int) (*{{$structName}}, error) {
-	data, err := col.db.db.Get(prefix{{$structName}}(id), nil)
+	data, err := col.db.db.Get(append([]byte("{{$structName}}/"), lexDumpInt(id)...), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -378,13 +383,17 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
     }
     batch := new(leveldb.Batch)
     id := rand.Int()
-	tmpObj, err := col.Get(id)
-	if tmpObj != nil {
+	for id == 0 {
+    	id = rand.Int()
+	}
+	key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
+	_, err = col.db.db.Get(key, nil)
+	if err == nil {
 		return -1, fmt.Errorf("ID collision: {{$structName}} with id (%d) exists", id)
 	}
-    batch.Put(prefix{{$structName}}(id), data)
+    batch.Put(key, data)
 	{{if hasIndex $structName}}
-    err = col.addIndex([]byte("${{$structName}}"), batch, id, obj)
+    err = col.addIndex([]byte("${{$structName}}/"), batch, id, obj)
     if err != nil {
         return 0, err
     }
@@ -398,7 +407,7 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
 
 //Update updates {{$structName}} with specified id
 func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error {
-    key := prefix{{$structName}}(id)
+    key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
     _, err := col.db.db.Get(key, nil)
     if err != nil {
         return fmt.Errorf("{{$structName}} with id (%d) doesn't exist: %s", id, err)
@@ -414,7 +423,7 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
         return err
     }
 	{{if hasIndex $structName}}
-    err = col.addIndex([]byte("${{$structName}}"), batch, id, obj)
+    err = col.addIndex([]byte("${{$structName}}/"), batch, id, obj)
     if err != nil {
         return err
     }
@@ -428,7 +437,7 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
 
 //Delete remoces {{$structName}} from the db with specified id
 func (col *{{$structName}}Collection) Delete(id int) error {
-    key := prefix{{$structName}}(id)
+    key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
     _, err := col.db.db.Get(key, nil)
     if err != nil {
         return fmt.Errorf("{{$structName}} with id (%d) doesn't exist: %s", id, err)
@@ -448,16 +457,17 @@ func (col *{{$structName}}Collection) Delete(id int) error {
 
 //removeIndex TODO this doesn't have to iterate trough the whole collection
 func (col *{{$structName}}Collection) removeIndex(batch *leveldb.Batch, id int) error {
-    iter := col.db.db.NewIterator(util.BytesPrefix([]byte("${{$structName}}")), nil)
+    iter := col.db.db.NewIterator(util.BytesPrefix([]byte("${{$structName}}/")), nil)
     for iter.Next() {
 		key := iter.Key()
 		index := bytes.LastIndexByte(key, '/')
 		if index == -1 {
 			return fmt.Errorf("Index for {{$structName}} has bad encoding")
 		}
+	    fmt.Println("removeIndex", index, len(key))
 		objID, err := lexLoadInt(key[index+1:])
 		if err != nil {
-			return err
+			return fmt.Errorf("Index for {{$structName}} (key: %s) if decode err: %s", string(key[index+1:]), err)
 		}
         if err != nil {
             return err
@@ -473,7 +483,7 @@ func (col *{{$structName}}Collection) removeIndex(batch *leveldb.Batch, id int) 
 //All returns an iterator witch iterates trough all {{$structName}}s
 func (col *{{$structName}}Collection) All() *Iter{{$structName}} {
 	return &Iter{{$structName}}{
-		Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix([]byte("{{$structName}}")), nil)},
+		Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix([]byte("{{$structName}}/")), nil)},
 		col: col,
 	}
 }
@@ -501,9 +511,7 @@ func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit *{{$subTy
 	if limit != nil {
 		limitDump = append([]byte("${{$structName}}/{{$indexName}}/"), lexDump{{lexType $subType}}(*limit)...)
 	} else {
-		prefix := []byte("${{$structName}}/{{$indexName}}/")
-		rangePrefix := util.BytesPrefix(prefix)
-		limitDump = rangePrefix.Limit
+		limitDump = util.BytesPrefix([]byte("${{$structName}}/{{$indexName}}/")).Limit
 	}
 	return &IterIndex{{$structName}}{
 		Iter{{$structName}}{
@@ -527,7 +535,9 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 	if obj == nil {
 		return nil
 	}
+	//TODO check if this struct has index than buf and idDump doesn't have to be here
 	var buf bytes.Buffer
+	idDump := lexDumpInt(id)
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
 		{{if hasIndex $attr.Type}}
@@ -555,23 +565,19 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 				for _, attr := range obj.{{$attrName}} {
 					buf.Reset()
 					buf.Write(prefix)
-					buf.WriteRune('/')
-					buf.WriteString("{{$attr.Index}}")
-					buf.WriteRune('/')
+					buf.WriteString("{{$attr.Index}}/")
 					buf.Write(lexDump{{lexType (replace $attr.Type "[]" "")}}(attr))
 					buf.WriteRune('/')
-					buf.Write(lexDumpInt(id))
+					buf.Write(idDump)
 					batch.Put(buf.Bytes(), nil)
 				}
 			{{else}}
 				buf.Reset()
 				buf.Write(prefix)
-				buf.WriteRune('/')
-				buf.WriteString("{{$attr.Index}}")
-				buf.WriteRune('/')
+				buf.WriteString("{{$attr.Index}}/")
 				buf.Write(lexDump{{lexType $attr.Type}}(obj.{{$attrName}}))
 				buf.WriteRune('/')
-				buf.Write(lexDumpInt(id))
+				buf.Write(idDump)
 				batch.Put(buf.Bytes(), nil)
 			{{end}}
 		{{end}}
@@ -714,9 +720,10 @@ func (gen *DBGenerator) hasIndex(structName string) bool {
 	}
 	for _, attr := range s.Attrs {
 		if gen.isStruct(attr.Type) {
-			return gen.hasIndex(attr.Type)
-		}
-		if attr.Index != "" {
+			if gen.hasIndex(attr.Type) {
+				return true
+			}
+		} else if attr.Index != "" {
 			return true
 		}
 	}
@@ -756,6 +763,7 @@ func (gen DBGenerator) Generate(w io.Writer) error {
 		"getIndex":   gen.getIndex,
 		"isExported": ast.IsExported,
 		"lexType":    lexType,
+		"print":      func(args ...interface{}) string { fmt.Println(args...); return "" },
 	}
 	buf := bytes.NewBuffer(nil)
 	temp, err := template.New("").Funcs(funcMap).Parse(DBTEMPLATE)
