@@ -191,59 +191,16 @@ func lexDumpTime(v time.Time) []byte {
 	return ret
 }
 
-func lexLoadInt(b []byte) (int, error) {
-	if len(b) == 0 {
-		return 0, fmt.Errorf("insufficient bytes to decode uvarint value")
-	}
-	length := int(b[0]) - intZero
-	if length < 0 {
-		length = -length
-		remB := b[1:]
-		if len(remB) < length {
-			return 0, fmt.Errorf("insufficient bytes to decode uvarint value: %s", remB)
-		}
-		var v int
-		// Use the ones-complement of each encoded byte in order to build
-		// up a positive number, then take the ones-complement again to
-		// arrive at our negative value.
-		for _, t := range remB[:length] {
-			v = (v << 8) | int(^t)
-		}
-		return ^v, nil
-	}
-
-	v, err := lexLoadUint(b)
-	if err != nil {
-		return 0, err
-	}
-	if v > math.MaxInt64 {
-		return 0, fmt.Errorf("varint %d overflows int64", v)
-	}
-	return int(v), nil
+func lexDumpID(id int) []byte {
+	return []byte{byte(id>>56), byte(id>>48), byte(id>>40), byte(id>>32), byte(id>>24), byte(id>>16), byte(id>>8), byte(id)}
 }
 
-func lexLoadUint(bytes []byte) (uint, error) {
-	if len(bytes) == 0 {
-		return 0, fmt.Errorf("insufficient bytes to decode uvarint value")
+func lexLoadID(idBytes []byte ) int {
+	var id int
+	for _, t := range idBytes {
+		id = (id << 8) | int(^t)
 	}
-	length := int(bytes[0]) - intZero
-	b := bytes[1:] // skip length byte
-	if length <= intSmall {
-		return uint(length), nil
-	}
-	length -= intSmall
-	if length < 0 || length > 8 {
-		return 0, fmt.Errorf("invalid uvarint length of %d", length)
-	} else if len(b) < length {
-		return 0, fmt.Errorf("insufficient bytes to decode uvarint value: %v", b)
-	}
-	var v uint
-	// It is faster to range over the elements in a slice than to index
-	// into the slice on each loop iteration.
-	for _, t := range b[:length] {
-		v = (v << 8) | uint(t)
-	}
-	return v, nil
+	return ^id
 }
 
 //DB handler to the db
@@ -278,6 +235,12 @@ type Iter struct {
 	it iterator.Iterator
 }
 
+//ID returns id of current object
+func (it *Iter) ID() int {
+	key := it.it.Key()
+	return lexLoadID(key[len(key)-8:])
+}
+
 //Next sets the iterator to the next object, or returns false
 func (it *Iter) Next() bool {
 	return it.it.Next()
@@ -301,16 +264,6 @@ type Iter{{$structName}} struct {
 	col *{{$structName}}Collection
 }
 
-//ID returns id of current {{$structName}}
-func (it *Iter{{$structName}}) ID() int {
-	key := it.it.Key()
-	objID, err := lexLoadInt(key[{{add (len $structName) 1}}:])
-	if err != nil {
-		return 0
-	}
-	return objID
-}
-
 //Value returns the {{$structName}} on witch is the iterator
 func (it *Iter{{$structName}}) Value() (*{{$structName}}, error) {
 	data := it.it.Value()
@@ -325,33 +278,12 @@ func (it *Iter{{$structName}}) Value() (*{{$structName}}, error) {
 //IterIndex{{$structName}} iterates trough an index for {{$structName}} in db
 type IterIndex{{$structName}} struct {
 	Iter{{$structName}}
-	indexNameLen int
-}
-
-//ID returns id of current {{$structName}}
-func (it *IterIndex{{$structName}}) ID() int {
-	key := it.it.Key()
-	subKey := key[it.indexNameLen+{{add (len $structName) 3}}:]
-	index := bytes.IndexByte(subKey, '/')
-	if index == -1 {
-		return 0
-	}
-	objID, err := lexLoadInt(subKey[index+1:])
-	if err != nil {
-		return 0
-	}
-	return objID
 }
 
 //Value returns the {{$structName}} on witch is the iterator
 func (it *IterIndex{{$structName}}) Value() (*{{$structName}}, error) {
 	key := it.it.Key()
-	subKey := key[it.indexNameLen+{{add (len $structName) 3}}:]
-	index := bytes.IndexByte(subKey, '/')
-	if index == -1 {
-		return nil, fmt.Errorf("Index for {{$structName}} has bad encoding")
-	}
-	key = append([]byte("{{$structName}}/"), subKey[index+1:]...)
+	key = append([]byte("{{$structName}}/"), key[len(key)-8:]...)
 	data, err := it.col.db.db.Get(key, nil)
 	if err != nil {
 		return nil, err
@@ -366,7 +298,7 @@ func (it *IterIndex{{$structName}}) Value() (*{{$structName}}, error) {
 
 //Get returns {{$structName}} with specified id or an error
 func (col *{{$structName}}Collection) Get(id int) (*{{$structName}}, error) {
-	data, err := col.db.db.Get(append([]byte("{{$structName}}/"), lexDumpInt(id)...), nil)
+	data, err := col.db.db.Get(append([]byte("{{$structName}}/"), lexDumpID(id)...), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +318,7 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
     }
     batch := new(leveldb.Batch)
     id := rand.Int()
-	key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
+	key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
     batch.Put(key, data)
 	{{if hasIndex $structName}}
     err = col.addIndex([]byte("${{$structName}}/"), batch, id, obj)
@@ -403,7 +335,7 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
 
 //Update updates {{$structName}} with specified id
 func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error {
-    key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
+    key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
 	{{if hasIndex $structName}}
     oldObj, err := col.Get(id)
     if err != nil {
@@ -440,7 +372,7 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
 
 //Delete removes {{$structName}} from the db with specified id
 func (col *{{$structName}}Collection) Delete(id int) error {
-    key := append([]byte("{{$structName}}/"), lexDumpInt(id)...)
+    key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
 	{{if hasIndex $structName}}
     oldObj, err := col.Get(id)
     if err != nil {
@@ -485,7 +417,6 @@ func (col *{{$structName}}Collection) {{$indexName}}Eq(val {{$subType}}) *IterIn
 			Iter: &Iter{col.db.db.NewIterator(util.BytesPrefix(prefix), nil)},
 			col: col,
 		},
-		{{len $indexName}},
 	}
 }
 
@@ -509,7 +440,6 @@ func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit *{{$subTy
 			}, nil)},
 			col: col,
 		},
-		{{len $indexName}},
 	}
 }
 {{end}}
@@ -526,7 +456,7 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 	}
 	//TODO check if this struct has index than buf and idDump doesn't have to be here
 	var buf bytes.Buffer
-	idDump := lexDumpInt(id)
+	idDump := lexDumpID(id)
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
 		{{if hasIndex $attr.Type}}
@@ -584,7 +514,7 @@ func (db *DB) remove{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id
 		return nil
 	}
 	var buf bytes.Buffer
-	idDump := lexDumpInt(id)
+	idDump := lexDumpID(id)
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
 		{{if hasIndex $attr.Type}}

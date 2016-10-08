@@ -6,10 +6,15 @@ package main
 
 import (
 	"bytes"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 const DBPATH = "/tmp/mimir_test"
 
@@ -29,7 +34,7 @@ func TestOpen(t *testing.T) {
 	}
 	_, err = db.Persons.Add(&Person{Name: "a", Lastname: "b", Age: 34})
 	if err == nil {
-		t.Error(err)
+		t.Error("Added person to closed db")
 	}
 }
 
@@ -112,6 +117,7 @@ func TestAddDelete(t *testing.T) {
 		t.Error("Person deleted can't be Get back!")
 	}
 }
+
 func TestLexDumpInt(t *testing.T) {
 	data := []struct {
 		a, b int
@@ -146,6 +152,15 @@ func TestLexDumpString(t *testing.T) {
 	}
 }
 
+func TestLexDumpID(t *testing.T) {
+	for i := 0; i < 100000; i++ {
+		d := rand.Int()
+		if lexLoadID(lexDumpID(d)) != d {
+			t.Errorf("lexDumpID(%d) not equal", d)
+		}
+	}
+}
+
 type IterPersonID struct {
 	id int
 	p  *Person
@@ -173,7 +188,7 @@ func TestIter(t *testing.T) {
 		&IterPersonID{
 			p: &Person{Name: "meh", Lastname: "barbarbar", Age: 1234, Addresses: []*address{
 				&address{Street: "Ble", Number: 222, City: "London"},
-				&address{Street: "Bla", Number: 666, City: "Tokio"},
+				&address{Street: "Bla", Number: 666, City: "Tokio/Japan"},
 			}},
 		},
 	}
