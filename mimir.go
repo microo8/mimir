@@ -191,14 +191,14 @@ func lexDumpTime(v time.Time) []byte {
 	return ret
 }
 
-func lexDumpID(id int) []byte {
+func lexDumpID(id int64) []byte {
 	return []byte{byte(id>>56), byte(id>>48), byte(id>>40), byte(id>>32), byte(id>>24), byte(id>>16), byte(id>>8), byte(id)}
 }
 
-func lexLoadID(idBytes []byte ) int {
-	var id int
+func lexLoadID(idBytes []byte) int64 {
+	var id int64
 	for _, t := range idBytes {
-		id = (id << 8) | int(^t)
+		id = (id << 8) | int64(^t)
 	}
 	return ^id
 }
@@ -236,7 +236,7 @@ type Iter struct {
 }
 
 //ID returns id of current object
-func (it *Iter) ID() int {
+func (it *Iter) ID() int64 {
 	key := it.it.Key()
 	return lexLoadID(key[len(key)-8:])
 }
@@ -297,7 +297,7 @@ func (it *IterIndex{{$structName}}) Value() (*{{$structName}}, error) {
 }
 
 //Get returns {{$structName}} with specified id or an error
-func (col *{{$structName}}Collection) Get(id int) (*{{$structName}}, error) {
+func (col *{{$structName}}Collection) Get(id int64) (*{{$structName}}, error) {
 	data, err := col.db.db.Get(append([]byte("{{$structName}}/"), lexDumpID(id)...), nil)
 	if err != nil {
 		return nil, err
@@ -311,13 +311,13 @@ func (col *{{$structName}}Collection) Get(id int) (*{{$structName}}, error) {
 }
 
 //Add inserts new {{$structName}} to the db
-func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
+func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int64, error) {
     data, err := json.Marshal(obj)
     if err != nil {
         return 0, fmt.Errorf("json encoding struct {{$structName}} error: %s", err)
     }
     batch := new(leveldb.Batch)
-    id := rand.Int()
+    id := rand.Int63()
 	key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
     batch.Put(key, data)
 	{{if hasIndex $structName}}
@@ -334,7 +334,7 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int, error) {
 }
 
 //Update updates {{$structName}} with specified id
-func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error {
+func (col *{{$structName}}Collection) Update(id int64, obj *{{$structName}}) error {
     key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
 	{{if hasIndex $structName}}
     oldObj, err := col.Get(id)
@@ -371,7 +371,7 @@ func (col *{{$structName}}Collection) Update(id int, obj *{{$structName}}) error
 }
 
 //Delete removes {{$structName}} from the db with specified id
-func (col *{{$structName}}Collection) Delete(id int) error {
+func (col *{{$structName}}Collection) Delete(id int64) error {
     key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
 	{{if hasIndex $structName}}
     oldObj, err := col.Get(id)
@@ -447,9 +447,9 @@ func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit *{{$subTy
 
 {{if hasIndex $structName}}
 {{if $struct.Exported}}
-func (col *{{$structName}}Collection) addIndex(prefix []byte, batch *leveldb.Batch, id int, obj *{{$structName}}) (err error) {
+func (col *{{$structName}}Collection) addIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *{{$structName}}) (err error) {
 {{else}}
-func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id int, obj *{{$structName}}) (err error) {
+func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id int64, obj *{{$structName}}) (err error) {
 {{end}}
 	if obj == nil {
 		return nil
@@ -506,9 +506,9 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 }
 
 {{if $struct.Exported}}
-func (col *{{$structName}}Collection) removeIndex(prefix []byte, batch *leveldb.Batch, id int, obj *{{$structName}}) (err error) {
+func (col *{{$structName}}Collection) removeIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *{{$structName}}) (err error) {
 {{else}}
-func (db *DB) remove{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id int, obj *{{$structName}}) (err error) {
+func (db *DB) remove{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id int64, obj *{{$structName}}) (err error) {
 {{end}}
 	if obj == nil {
 		return nil

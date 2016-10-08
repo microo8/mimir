@@ -154,7 +154,7 @@ func TestLexDumpString(t *testing.T) {
 
 func TestLexDumpID(t *testing.T) {
 	for i := 0; i < 100000; i++ {
-		d := rand.Int()
+		d := rand.Int63()
 		if lexLoadID(lexDumpID(d)) != d {
 			t.Errorf("lexDumpID(%d) not equal", d)
 		}
@@ -162,7 +162,7 @@ func TestLexDumpID(t *testing.T) {
 }
 
 type IterPersonID struct {
-	id int
+	id int64
 	p  *Person
 }
 

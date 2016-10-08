@@ -150,14 +150,14 @@ func lexDumpTime(v time.Time) []byte {
 	return ret
 }
 
-func lexDumpID(id int) []byte {
+func lexDumpID(id int64) []byte {
 	return []byte{byte(id >> 56), byte(id >> 48), byte(id >> 40), byte(id >> 32), byte(id >> 24), byte(id >> 16), byte(id >> 8), byte(id)}
 }
 
-func lexLoadID(idBytes []byte) int {
-	var id int
+func lexLoadID(idBytes []byte) int64 {
+	var id int64
 	for _, t := range idBytes {
-		id = (id << 8) | int(^t)
+		id = (id << 8) | int64(^t)
 	}
 	return ^id
 }
@@ -194,7 +194,7 @@ type Iter struct {
 }
 
 //ID returns id of current object
-func (it *Iter) ID() int {
+func (it *Iter) ID() int64 {
 	key := it.it.Key()
 	return lexLoadID(key[len(key)-8:])
 }
@@ -253,7 +253,7 @@ func (it *IterIndexPerson) Value() (*Person, error) {
 }
 
 //Get returns Person with specified id or an error
-func (col *PersonCollection) Get(id int) (*Person, error) {
+func (col *PersonCollection) Get(id int64) (*Person, error) {
 	data, err := col.db.db.Get(append([]byte("Person/"), lexDumpID(id)...), nil)
 	if err != nil {
 		return nil, err
@@ -267,13 +267,13 @@ func (col *PersonCollection) Get(id int) (*Person, error) {
 }
 
 //Add inserts new Person to the db
-func (col *PersonCollection) Add(obj *Person) (int, error) {
+func (col *PersonCollection) Add(obj *Person) (int64, error) {
 	data, err := json.Marshal(obj)
 	if err != nil {
 		return 0, fmt.Errorf("json encoding struct Person error: %s", err)
 	}
 	batch := new(leveldb.Batch)
-	id := rand.Int()
+	id := rand.Int63()
 	key := append([]byte("Person/"), lexDumpID(id)...)
 	batch.Put(key, data)
 
@@ -290,7 +290,7 @@ func (col *PersonCollection) Add(obj *Person) (int, error) {
 }
 
 //Update updates Person with specified id
-func (col *PersonCollection) Update(id int, obj *Person) error {
+func (col *PersonCollection) Update(id int64, obj *Person) error {
 	key := append([]byte("Person/"), lexDumpID(id)...)
 
 	oldObj, err := col.Get(id)
@@ -322,7 +322,7 @@ func (col *PersonCollection) Update(id int, obj *Person) error {
 }
 
 //Delete removes Person from the db with specified id
-func (col *PersonCollection) Delete(id int) error {
+func (col *PersonCollection) Delete(id int64) error {
 	key := append([]byte("Person/"), lexDumpID(id)...)
 
 	oldObj, err := col.Get(id)
@@ -493,7 +493,7 @@ func (col *PersonCollection) ContractRange(start, limit *[]byte) *IterIndexPerso
 	}
 }
 
-func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id int, obj *Person) (err error) {
+func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *Person) (err error) {
 
 	if obj == nil {
 		return nil
@@ -540,7 +540,7 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	return nil
 }
 
-func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, id int, obj *Person) (err error) {
+func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *Person) (err error) {
 
 	if obj == nil {
 		return nil
@@ -586,7 +586,7 @@ func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, id
 	return nil
 }
 
-func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *address) (err error) {
+func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *address) (err error) {
 
 	if obj == nil {
 		return nil
@@ -606,7 +606,7 @@ func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *
 	return nil
 }
 
-func (db *DB) removeaddressIndex(prefix []byte, batch *leveldb.Batch, id int, obj *address) (err error) {
+func (db *DB) removeaddressIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *address) (err error) {
 
 	if obj == nil {
 		return nil
