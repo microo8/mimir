@@ -273,10 +273,10 @@ func (col *PersonCollection) Add(obj *Person) (int64, error) {
 	}
 	batch := new(leveldb.Batch)
 	id := rand.Int63()
-	key := append([]byte("Person/"), lexDumpID(id)...)
-	batch.Put(key, data)
+	idDump := lexDumpID(id)
+	batch.Put(append([]byte("Person/"), idDump...), data)
 
-	err = col.addIndex([]byte("$Person/"), batch, id, obj)
+	err = col.addIndex([]byte("$Person/"), batch, idDump, obj)
 	if err != nil {
 		return 0, err
 	}
@@ -290,7 +290,8 @@ func (col *PersonCollection) Add(obj *Person) (int64, error) {
 
 //Update updates Person with specified id
 func (col *PersonCollection) Update(id int64, obj *Person) error {
-	key := append([]byte("Person/"), lexDumpID(id)...)
+	idDump := lexDumpID(id)
+	key := append([]byte("Person/"), idDump...)
 
 	oldObj, err := col.Get(id)
 	if err != nil {
@@ -304,11 +305,11 @@ func (col *PersonCollection) Update(id int64, obj *Person) error {
 	batch := new(leveldb.Batch)
 	batch.Put(key, data)
 
-	err = col.removeIndex([]byte("$Person/"), batch, id, oldObj)
+	err = col.removeIndex([]byte("$Person/"), batch, idDump, oldObj)
 	if err != nil {
 		return err
 	}
-	err = col.addIndex([]byte("$Person/"), batch, id, obj)
+	err = col.addIndex([]byte("$Person/"), batch, idDump, obj)
 	if err != nil {
 		return err
 	}
@@ -322,7 +323,8 @@ func (col *PersonCollection) Update(id int64, obj *Person) error {
 
 //Delete removes Person from the db with specified id
 func (col *PersonCollection) Delete(id int64) error {
-	key := append([]byte("Person/"), lexDumpID(id)...)
+	idDump := lexDumpID(id)
+	key := append([]byte("Person/"), idDump...)
 
 	oldObj, err := col.Get(id)
 	if err != nil {
@@ -332,7 +334,7 @@ func (col *PersonCollection) Delete(id int64) error {
 	batch := new(leveldb.Batch)
 	batch.Delete(key)
 
-	err = col.removeIndex([]byte("$Person/"), batch, id, oldObj)
+	err = col.removeIndex([]byte("$Person/"), batch, idDump, oldObj)
 	if err != nil {
 		return fmt.Errorf("Removing Person error: %s", err)
 	}
@@ -492,19 +494,17 @@ func (col *PersonCollection) ContractRange(start, limit *[]byte) *IterIndexPerso
 	}
 }
 
-func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *Person) (err error) {
+func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, idDump []byte, obj *Person) (err error) {
 
 	if obj == nil {
 		return nil
 	}
-	//TODO check if this struct has index than buf and idDump doesn't have to be here
 	var offset int
 	var valDump, key []byte
-	idDump := lexDumpID(id)
 
 	for _, attr := range obj.Addresses {
 
-		err = col.db.addaddressIndex(prefix, batch, id, attr)
+		err = col.db.addaddressIndex(prefix, batch, idDump, attr)
 
 		if err != nil {
 			return err
@@ -552,18 +552,17 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 	return nil
 }
 
-func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *Person) (err error) {
+func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, idDump []byte, obj *Person) (err error) {
 
 	if obj == nil {
 		return nil
 	}
 	var offset int
 	var valDump, key []byte
-	idDump := lexDumpID(id)
 
 	for _, attr := range obj.Addresses {
 
-		err = col.db.removeaddressIndex(prefix, batch, id, attr)
+		err = col.db.removeaddressIndex(prefix, batch, idDump, attr)
 
 		if err != nil {
 			return err
@@ -611,15 +610,13 @@ func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, id
 	return nil
 }
 
-func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *address) (err error) {
+func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, idDump []byte, obj *address) (err error) {
 
 	if obj == nil {
 		return nil
 	}
-	//TODO check if this struct has index than buf and idDump doesn't have to be here
 	var offset int
 	var valDump, key []byte
-	idDump := lexDumpID(id)
 
 	valDump = lexDumpString(obj.City)
 	key = make([]byte, len(prefix)+len(valDump)+21)
@@ -636,14 +633,13 @@ func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int64, obj
 	return nil
 }
 
-func (db *DB) removeaddressIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *address) (err error) {
+func (db *DB) removeaddressIndex(prefix []byte, batch *leveldb.Batch, idDump []byte, obj *address) (err error) {
 
 	if obj == nil {
 		return nil
 	}
 	var offset int
 	var valDump, key []byte
-	idDump := lexDumpID(id)
 
 	valDump = lexDumpString(obj.City)
 	key = make([]byte, len(prefix)+len(valDump)+21)

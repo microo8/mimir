@@ -316,11 +316,11 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int64, error) {
         return 0, fmt.Errorf("json encoding struct {{$structName}} error: %s", err)
     }
     batch := new(leveldb.Batch)
-    id := rand.Int63()
-	key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
-    batch.Put(key, data)
+	id := rand.Int63()
+    idDump := lexDumpID(id)
+    batch.Put(append([]byte("{{$structName}}/"), idDump...), data)
 	{{if hasIndex $structName}}
-    err = col.addIndex([]byte("${{$structName}}/"), batch, id, obj)
+    err = col.addIndex([]byte("${{$structName}}/"), batch, idDump, obj)
     if err != nil {
         return 0, err
     }
@@ -334,7 +334,8 @@ func (col *{{$structName}}Collection) Add(obj *{{$structName}}) (int64, error) {
 
 //Update updates {{$structName}} with specified id
 func (col *{{$structName}}Collection) Update(id int64, obj *{{$structName}}) error {
-    key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
+	idDump := lexDumpID(id)
+    key := append([]byte("{{$structName}}/"), idDump...)
 	{{if hasIndex $structName}}
     oldObj, err := col.Get(id)
     if err != nil {
@@ -353,11 +354,11 @@ func (col *{{$structName}}Collection) Update(id int64, obj *{{$structName}}) err
     batch := new(leveldb.Batch)
     batch.Put(key, data)
 	{{if hasIndex $structName}}
-    err = col.removeIndex([]byte("${{$structName}}/"), batch, id, oldObj)
+    err = col.removeIndex([]byte("${{$structName}}/"), batch, idDump, oldObj)
     if err != nil {
         return err
     }
-    err = col.addIndex([]byte("${{$structName}}/"), batch, id, obj)
+    err = col.addIndex([]byte("${{$structName}}/"), batch, idDump, obj)
     if err != nil {
         return err
     }
@@ -371,7 +372,8 @@ func (col *{{$structName}}Collection) Update(id int64, obj *{{$structName}}) err
 
 //Delete removes {{$structName}} from the db with specified id
 func (col *{{$structName}}Collection) Delete(id int64) error {
-    key := append([]byte("{{$structName}}/"), lexDumpID(id)...)
+	idDump := lexDumpID(id)
+    key := append([]byte("{{$structName}}/"), idDump...)
 	{{if hasIndex $structName}}
     oldObj, err := col.Get(id)
     if err != nil {
@@ -386,7 +388,7 @@ func (col *{{$structName}}Collection) Delete(id int64) error {
     batch := new(leveldb.Batch)
 	batch.Delete(key)
 	{{if hasIndex $structName}}
-    err = col.removeIndex([]byte("${{$structName}}/"), batch, id, oldObj)
+    err = col.removeIndex([]byte("${{$structName}}/"), batch, idDump, oldObj)
     if err != nil {
         return fmt.Errorf("Removing {{$structName}} error: %s", err)
     }
@@ -446,32 +448,31 @@ func (col *{{$structName}}Collection) {{$indexName}}Range(start, limit *{{$subTy
 
 {{if hasIndex $structName}}
 {{if $struct.Exported}}
-func (col *{{$structName}}Collection) addIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *{{$structName}}) (err error) {
+func (col *{{$structName}}Collection) addIndex(prefix []byte, batch *leveldb.Batch, idDump []byte , obj *{{$structName}}) (err error) {
 {{else}}
-func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id int64, obj *{{$structName}}) (err error) {
+func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, idDump []byte, obj *{{$structName}}) (err error) {
 {{end}}
 	if obj == nil {
 		return nil
 	}
 	var offset int
 	var valDump, key []byte
-	idDump := lexDumpID(id)
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
 		{{if hasIndex $attr.Type}}
 		{{if (contains $attr.Type "[]")}}
 			for _, attr := range obj.{{$attrName}} {
 				{{if isExported (replace (replace $attr.Type "[]" "") "*" "")}}
-				err = {{if $struct.Exported}}col.{{end}}db.{{replace (replace $attr.Type "[]" "") "*" ""}}s.addIndex(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				err = {{if $struct.Exported}}col.{{end}}db.{{replace (replace $attr.Type "[]" "") "*" ""}}s.addIndex(prefix, batch, idDump, {{if not (contains $attr.Type "*")}}&{{end}}attr)
 				{{else}}
-				err = {{if $struct.Exported}}col.{{end}}db.add{{replace (replace $attr.Type "[]" "") "*" ""}}Index(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				err = {{if $struct.Exported}}col.{{end}}db.add{{replace (replace $attr.Type "[]" "") "*" ""}}Index(prefix, batch, idDump, {{if not (contains $attr.Type "*")}}&{{end}}attr)
 				{{end}}
 				if err != nil {
 					return err
 				}
 			}
     	{{else}}
-			err = db.{{replace $attr.Type "*" ""}}s.addIndex(prefix, batch, id, obj.{{$attrName}})
+			err = db.{{replace $attr.Type "*" ""}}s.addIndex(prefix, batch, idDump, obj.{{$attrName}})
 			if err != nil {
 				return err
 			}
@@ -513,32 +514,31 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 }
 
 {{if $struct.Exported}}
-func (col *{{$structName}}Collection) removeIndex(prefix []byte, batch *leveldb.Batch, id int64, obj *{{$structName}}) (err error) {
+func (col *{{$structName}}Collection) removeIndex(prefix []byte, batch *leveldb.Batch, idDump []byte, obj *{{$structName}}) (err error) {
 {{else}}
-func (db *DB) remove{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id int64, obj *{{$structName}}) (err error) {
+func (db *DB) remove{{$structName}}Index(prefix []byte, batch *leveldb.Batch, idDump []byte, obj *{{$structName}}) (err error) {
 {{end}}
 	if obj == nil {
 		return nil
 	}
 	var offset int
 	var valDump, key []byte
-	idDump := lexDumpID(id)
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
 		{{if hasIndex $attr.Type}}
 		{{if (contains $attr.Type "[]")}}
 			for _, attr := range obj.{{$attrName}} {
 				{{if isExported (replace (replace $attr.Type "[]" "") "*" "")}}
-				err = {{if $struct.Exported}}col.{{end}}db.{{replace (replace $attr.Type "[]" "") "*" ""}}s.removeIndex(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				err = {{if $struct.Exported}}col.{{end}}db.{{replace (replace $attr.Type "[]" "") "*" ""}}s.removeIndex(prefix, batch, idDump, {{if not (contains $attr.Type "*")}}&{{end}}attr)
 				{{else}}
-				err = {{if $struct.Exported}}col.{{end}}db.remove{{replace (replace $attr.Type "[]" "") "*" ""}}Index(prefix, batch, id, {{if not (contains $attr.Type "*")}}&{{end}}attr)
+				err = {{if $struct.Exported}}col.{{end}}db.remove{{replace (replace $attr.Type "[]" "") "*" ""}}Index(prefix, batch, idDump, {{if not (contains $attr.Type "*")}}&{{end}}attr)
 				{{end}}
 				if err != nil {
 					return err
 				}
 			}
     	{{else}}
-			err = db.{{replace $attr.Type "*" ""}}s.addIndex(prefix, batch, id, obj.{{$attrName}})
+			err = db.{{replace $attr.Type "*" ""}}s.addIndex(prefix, batch, idDump, obj.{{$attrName}})
 			if err != nil {
 				return err
 			}
