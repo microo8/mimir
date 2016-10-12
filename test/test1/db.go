@@ -499,7 +499,8 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 		return nil
 	}
 	//TODO check if this struct has index than buf and idDump doesn't have to be here
-	var buf bytes.Buffer
+	var offset int
+	var valDump, key []byte
 	idDump := lexDumpID(id)
 
 	for _, attr := range obj.Addresses {
@@ -511,30 +512,42 @@ func (col *PersonCollection) addIndex(prefix []byte, batch *leveldb.Batch, id in
 		}
 	}
 
-	buf.Reset()
-	buf.Write(prefix)
-	buf.WriteString("Age/")
-	buf.Write(lexDumpInt(obj.Age))
-	buf.WriteRune('/')
-	buf.Write(idDump)
-	batch.Put(buf.Bytes(), nil)
+	valDump = lexDumpInt(obj.Age)
+	key = make([]byte, len(prefix)+len(valDump)+13)
+	copy(key, prefix)
+	offset = len(prefix)
+	copy(key[offset:], []byte("Age/"))
+	offset += 4
+	copy(key[offset:], valDump)
+	offset += len(valDump)
+	key[offset] = byte('/')
+	copy(key[offset+1:], idDump)
+	batch.Put(key, nil)
 
-	buf.Reset()
-	buf.Write(prefix)
-	buf.WriteString("Birth/")
-	buf.Write(lexDumpTime(obj.BirthDate))
-	buf.WriteRune('/')
-	buf.Write(idDump)
-	batch.Put(buf.Bytes(), nil)
+	valDump = lexDumpTime(obj.BirthDate)
+	key = make([]byte, len(prefix)+len(valDump)+15)
+	copy(key, prefix)
+	offset = len(prefix)
+	copy(key[offset:], []byte("Birth/"))
+	offset += 6
+	copy(key[offset:], valDump)
+	offset += len(valDump)
+	key[offset] = byte('/')
+	copy(key[offset+1:], idDump)
+	batch.Put(key, nil)
 
 	for _, attr := range obj.ContractFile {
-		buf.Reset()
-		buf.Write(prefix)
-		buf.WriteString("Contract/")
-		buf.Write(lexDumpByte(attr))
-		buf.WriteRune('/')
-		buf.Write(idDump)
-		batch.Put(buf.Bytes(), nil)
+		valDump = lexDumpByte(attr)
+		key = make([]byte, len(prefix)+len(valDump)+18)
+		copy(key, prefix)
+		offset = len(prefix)
+		copy(key[offset:], []byte("Contract/"))
+		offset += 9
+		copy(key[offset:], valDump)
+		offset += len(valDump)
+		key[offset] = byte('/')
+		copy(key[offset+1:], idDump)
+		batch.Put(key, nil)
 	}
 
 	return nil
@@ -592,16 +605,21 @@ func (db *DB) addaddressIndex(prefix []byte, batch *leveldb.Batch, id int64, obj
 		return nil
 	}
 	//TODO check if this struct has index than buf and idDump doesn't have to be here
-	var buf bytes.Buffer
+	var offset int
+	var valDump, key []byte
 	idDump := lexDumpID(id)
 
-	buf.Reset()
-	buf.Write(prefix)
-	buf.WriteString("AddressCity/")
-	buf.Write(lexDumpString(obj.City))
-	buf.WriteRune('/')
-	buf.Write(idDump)
-	batch.Put(buf.Bytes(), nil)
+	valDump = lexDumpString(obj.City)
+	key = make([]byte, len(prefix)+len(valDump)+21)
+	copy(key, prefix)
+	offset = len(prefix)
+	copy(key[offset:], []byte("AddressCity/"))
+	offset += 12
+	copy(key[offset:], valDump)
+	offset += len(valDump)
+	key[offset] = byte('/')
+	copy(key[offset+1:], idDump)
+	batch.Put(key, nil)
 
 	return nil
 }

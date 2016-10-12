@@ -455,7 +455,8 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 		return nil
 	}
 	//TODO check if this struct has index than buf and idDump doesn't have to be here
-	var buf bytes.Buffer
+	var offset int
+	var valDump, key []byte
 	idDump := lexDumpID(id)
     {{range $attrName, $attr := $struct.Attrs}}
     {{if isStruct $attr.Type}}
@@ -482,22 +483,30 @@ func (db *DB) add{{$structName}}Index(prefix []byte, batch *leveldb.Batch, id in
 	    {{if ne $attr.Index ""}}
 			{{if (contains $attr.Type "[]") and (ne $attr.Index "[]rune") and (ne $attr.Index "[]byte")}}
 				for _, attr := range obj.{{$attrName}} {
-					buf.Reset()
-					buf.Write(prefix)
-					buf.WriteString("{{$attr.Index}}/")
-					buf.Write(lexDump{{lexType (replace $attr.Type "[]" "")}}(attr))
-					buf.WriteRune('/')
-					buf.Write(idDump)
-					batch.Put(buf.Bytes(), nil)
+					valDump = lexDump{{lexType (replace $attr.Type "[]" "")}}(attr)
+					key = make([]byte, len(prefix)+len(valDump)+{{add (len $attr.Index) 10}})
+					copy(key, prefix)
+					offset = len(prefix)
+					copy(key[offset:],[]byte("{{$attr.Index}}/"))
+					offset += {{add (len $attr.Index) 1}}
+					copy(key[offset:], valDump)
+					offset += len(valDump)
+					key[offset] = byte('/')
+					copy(key[offset+1:], idDump)
+					batch.Put(key, nil)
 				}
 			{{else}}
-				buf.Reset()
-				buf.Write(prefix)
-				buf.WriteString("{{$attr.Index}}/")
-				buf.Write(lexDump{{lexType $attr.Type}}(obj.{{$attrName}}))
-				buf.WriteRune('/')
-				buf.Write(idDump)
-				batch.Put(buf.Bytes(), nil)
+				valDump = lexDump{{lexType (replace $attr.Type "[]" "")}}(obj.{{$attrName}})
+				key = make([]byte, len(prefix)+len(valDump)+{{add (len $attr.Index) 10}})
+				copy(key, prefix)
+				offset = len(prefix)
+				copy(key[offset:],[]byte("{{$attr.Index}}/"))
+				offset += {{add (len $attr.Index) 1}}
+				copy(key[offset:], valDump)
+				offset += len(valDump)
+				key[offset] = byte('/')
+				copy(key[offset+1:], idDump)
+				batch.Put(key, nil)
 			{{end}}
 		{{end}}
     {{end}}

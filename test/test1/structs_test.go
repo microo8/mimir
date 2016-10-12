@@ -340,3 +340,5 @@ func BenchmarkInsertGetUpdate(b *testing.B) {
 		}
 	}
 }
+
+//TODO testable examples
