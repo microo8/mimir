@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -558,7 +557,8 @@ func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, id
 	if obj == nil {
 		return nil
 	}
-	var buf bytes.Buffer
+	var offset int
+	var valDump, key []byte
 	idDump := lexDumpID(id)
 
 	for _, attr := range obj.Addresses {
@@ -570,30 +570,42 @@ func (col *PersonCollection) removeIndex(prefix []byte, batch *leveldb.Batch, id
 		}
 	}
 
-	buf.Reset()
-	buf.Write(prefix)
-	buf.WriteString("Age/")
-	buf.Write(lexDumpInt(obj.Age))
-	buf.WriteRune('/')
-	buf.Write(idDump)
-	batch.Delete(buf.Bytes())
+	valDump = lexDumpInt(obj.Age)
+	key = make([]byte, len(prefix)+len(valDump)+13)
+	copy(key, prefix)
+	offset = len(prefix)
+	copy(key[offset:], []byte("Age/"))
+	offset += 4
+	copy(key[offset:], valDump)
+	offset += len(valDump)
+	key[offset] = byte('/')
+	copy(key[offset+1:], idDump)
+	batch.Delete(key)
 
-	buf.Reset()
-	buf.Write(prefix)
-	buf.WriteString("Birth/")
-	buf.Write(lexDumpTime(obj.BirthDate))
-	buf.WriteRune('/')
-	buf.Write(idDump)
-	batch.Delete(buf.Bytes())
+	valDump = lexDumpTime(obj.BirthDate)
+	key = make([]byte, len(prefix)+len(valDump)+15)
+	copy(key, prefix)
+	offset = len(prefix)
+	copy(key[offset:], []byte("Birth/"))
+	offset += 6
+	copy(key[offset:], valDump)
+	offset += len(valDump)
+	key[offset] = byte('/')
+	copy(key[offset+1:], idDump)
+	batch.Delete(key)
 
 	for _, attr := range obj.ContractFile {
-		buf.Reset()
-		buf.Write(prefix)
-		buf.WriteString("Contract/")
-		buf.Write(lexDumpByte(attr))
-		buf.WriteRune('/')
-		buf.Write(idDump)
-		batch.Delete(buf.Bytes())
+		valDump = lexDumpByte(attr)
+		key = make([]byte, len(prefix)+len(valDump)+18)
+		copy(key, prefix)
+		offset = len(prefix)
+		copy(key[offset:], []byte("Contract/"))
+		offset += 9
+		copy(key[offset:], valDump)
+		offset += len(valDump)
+		key[offset] = byte('/')
+		copy(key[offset+1:], idDump)
+		batch.Delete(key)
 	}
 
 	return nil
@@ -629,16 +641,21 @@ func (db *DB) removeaddressIndex(prefix []byte, batch *leveldb.Batch, id int64, 
 	if obj == nil {
 		return nil
 	}
-	var buf bytes.Buffer
+	var offset int
+	var valDump, key []byte
 	idDump := lexDumpID(id)
 
-	buf.Reset()
-	buf.Write(prefix)
-	buf.WriteString("AddressCity/")
-	buf.Write(lexDumpString(obj.City))
-	buf.WriteRune('/')
-	buf.Write(idDump)
-	batch.Delete(buf.Bytes())
+	valDump = lexDumpString(obj.City)
+	key = make([]byte, len(prefix)+len(valDump)+21)
+	copy(key, prefix)
+	offset = len(prefix)
+	copy(key[offset:], []byte("AddressCity/"))
+	offset += 12
+	copy(key[offset:], valDump)
+	offset += len(valDump)
+	key[offset] = byte('/')
+	copy(key[offset+1:], idDump)
+	batch.Delete(key)
 
 	return nil
 }
