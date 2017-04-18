@@ -14,11 +14,13 @@ import (
 	"go/token"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"text/template"
 )
 
 var (
+	findIndex = regexp.MustCompile("index: *\"([_a-zA-Z]*)\"")
 	//INDEXABLE is an array of type names whitch have supported lexDump
 	INDEXABLE = map[string]string{
 		"int": "Int", "int8": "Int8", "int16": "Int16", "int32": "Int32", "int64": "Int64",
@@ -628,8 +630,9 @@ func parseStructType(gen *DBGenerator, structSpec *ast.TypeSpec, structType *ast
 		for _, name := range field.Names {
 			attr := new(Attr)
 			if field.Tag != nil && field.Tag.Kind == token.STRING {
-				if field.Tag.Value[:8] == "`index:\"" {
-					attr.Index = field.Tag.Value[8 : len(field.Tag.Value)-2]
+				matches := findIndex.FindStringSubmatch(field.Tag.Value)
+				if len(matches) > 1 {
+					attr.Index = matches[len(matches)-1]
 				}
 			}
 			switch typ := field.Type.(type) {
