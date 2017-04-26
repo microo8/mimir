@@ -14,8 +14,7 @@ Indexing of all builtin types + `time.Time` supported!
 
 The store operates on top of [leveldb](https://github.com/syndtr/goleveldb). [Mímir](https://en.wikipedia.org/wiki/M%C3%ADmir) is a wisdom deity from the Norse mythology.
 
-* TODOs: more structs examples to test; test, test, test; optimize/benchmark; maybe some goroutines?
-* Contribution of all kind is welcome!
+Contribution of all kind is welcome!
 
 example structs (structs.go):
 
