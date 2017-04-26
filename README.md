@@ -1,4 +1,5 @@
 [![Report card](http://goreportcard.com/badge/microo8/mimir)](http://goreportcard.com/report/microo8/mimir)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 
 # Mímir
 <img src="https://raw.githubusercontent.com/microo8/mimir/master/logo.png" alt="Mímir logo" align="right"/>
